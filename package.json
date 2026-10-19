@@ -1,0 +1,8 @@
+{
+  "name": "weltkarte",
+  "private": true,
+  "description": "Nur für scripts/daten-holen.mjs (RSS/XML lesen). Die Seite selbst braucht keine Pakete.",
+  "dependencies": {
+    "fast-xml-parser": "^5.11.2"
+  }
+}

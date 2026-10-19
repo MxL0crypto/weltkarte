@@ -91,6 +91,7 @@ h1, h2 { margin: 0; font-size: inherit; }
 .ebene { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 5px 10px; }
 .ebene label { display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: .04em; }
 .ebene input { accent-color: var(--gruen); width: 14px; height: 14px; margin: 0; }
+.ebene svg { width: 13px; height: 13px; flex: none; fill: currentColor; }
 .anzahl { color: var(--text-schwach); }
 .ebene.leer label, .ebene.leer .anzahl { color: var(--grau); }
 .info-knopf {
@@ -208,12 +209,45 @@ h1, h2 { margin: 0; font-size: inherit; }
 
 <script>
 // Alle Ebenen der Karte. Neue Ebene = neuer Eintrag hier (+ Quelle im Daten-Skript).
+// form: Zeichen aus FORMEN. skala: Größe nach "wert" (Paare wert, Größe). Spätere Ebenen liegen oben.
 const EBENEN = [
   {
-    id: 'erdbeben', name: 'Erdbeben', datei: 'data/erdbeben.json', symbol: '◉', standardAn: true, quelle: 'USGS',
+    id: 'erdbeben', name: 'Erdbeben', datei: 'data/erdbeben.json', form: 'kreis', standardAn: true, quelle: 'USGS',
+    skala: [2.5, 3, 5, 6, 7, 12, 9, 20],
     info: 'Erdbeben ab Stärke 2,5 weltweit aus den letzten 7 Tagen. Je größer der Punkt, desto stärker das Beben. Ab 5 erhöht, ab 6 hoch.',
   },
+  {
+    id: 'waldbraende', name: 'Waldbrände', datei: 'data/waldbraende.json', form: 'flamme', standardAn: false, quelle: 'NASA EONET',
+    info: 'Größere Wald- und Flächenbrände, die die NASA in den letzten 30 Tagen erfasst hat. Laufende Brände bleiben bei jedem Zeitraum sichtbar. Gefährliche Brände zeigt zusätzlich die Ebene Katastrophen-Warnungen.',
+  },
+  {
+    id: 'stuerme', name: 'Stürme', datei: 'data/stuerme.json', form: 'wirbel', standardAn: true, quelle: 'NASA EONET',
+    skala: [34, 0.6, 64, 0.8, 140, 1.2],
+    info: 'Wirbelstürme und schwere Stürme, die die NASA gerade verfolgt, an ihrer letzten gemeldeten Position. Je größer das Zeichen, desto stärker der Wind. Ab 63 km/h erhöht, ab 119 km/h (Orkan) hoch.',
+  },
+  {
+    id: 'vulkane', name: 'Vulkane', datei: 'data/vulkane.json', form: 'dreieck', standardAn: true, quelle: 'NASA EONET',
+    info: 'Vulkane, die laut NASA gerade aktiv sind. Viele brechen über Monate oder Jahre immer wieder aus, darum bleiben sie bei jedem Zeitraum sichtbar.',
+  },
+  {
+    id: 'ueberschwemmungen', name: 'Überschwemmungen', datei: 'data/ueberschwemmungen.json', form: 'tropfen', standardAn: false, quelle: 'NASA EONET',
+    info: 'Überschwemmungen, die die NASA gerade verfolgt. Oft leer, weil die NASA Fluten schnell wieder abschließt. Aktuelle Flutwarnungen zeigt die Ebene Katastrophen-Warnungen.',
+  },
+  {
+    id: 'gdacs', name: 'Katastrophen-Warnungen', datei: 'data/gdacs.json', form: 'warnung', standardAn: true, quelle: 'GDACS',
+    info: 'Warnungen des Katastrophen-Warnsystems von UN und EU: Erdbeben, Tropenstürme, Überschwemmungen, Vulkane, Dürren und Waldbrände, die Menschen gefährden können. Rot = hoch, Orange = erhöht, Grün = Beobachtung. Grüne Waldbrand-Meldungen sind ausgeblendet, es sind meist über hundert.',
+  },
 ];
+// Zeichen im 24er-Raster (SVG-Pfade): im Ebenen-Panel als SVG, auf der Karte als Bild je Stufe.
+const FORMEN = {
+  kreis: 'M4 12a8 8 0 1 1 16 0a8 8 0 1 1-16 0z',
+  flamme: 'M12 1.5c.6 4 6.5 6 6.5 12.5a6.5 6.5 0 0 1-13 0c0-3.2 1.8-5.2 3.1-7 .1 2.3 1.1 3.6 2.6 3.9C10.6 7.5 10.4 4.5 12 1.5z',
+  wirbel: 'M7.5 12a4.5 4.5 0 1 1 9 0a4.5 4.5 0 1 1-9 0zM10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0zM7.6 11C7.6 6 12 2.5 18.5 2.5C14.8 3.8 12.6 5.6 12.2 7.6zM16.4 13C16.4 18 12 21.5 5.5 21.5C9.2 20.2 11.4 18.4 11.8 16.4z',
+  dreieck: 'M2 21 9.5 7h5L22 21z',
+  tropfen: 'M12 2C9 7 5 10.5 5 15a7 7 0 0 0 14 0c0-4.5-4-8-7-13z',
+  warnung: 'M12 1.5 23 21.5H1zM11 8.5v7h2v-7zM11 17v2.5h2V17z', // gegenläufige Teilpfade (Auge, Ausrufezeichen) = Loch
+};
+const STUFEN = ['hoch', 'erhoeht', 'beobachtung'];
 const ZEITRAEUME = [['1h', 1], ['6h', 6], ['24h', 24], ['48h', 48], ['7d', 168], ['Alle', Infinity]];
 const NEU_LADEN_MIN = 5;
 const LIVE_GRENZE_MIN = 90;
@@ -243,7 +277,9 @@ function vor(ms) {
   if (min < 1) return 'gerade eben';
   if (min < 60) return `vor ${min} Min.`;
   if (min < 48 * 60) return `vor ${Math.floor(min / 60)} Std.`;
-  return `vor ${Math.floor(min / 1440)} Tagen`;
+  const tage = Math.floor(min / 1440);
+  if (tage < 60) return `vor ${tage} Tagen`;
+  return tage < 730 ? `vor ${Math.floor(tage / 30)} Monaten` : `vor ${Math.floor(tage / 365)} Jahren`;
 }
 
 // ---- Karte ----
@@ -272,19 +308,39 @@ map.on('load', () => {
       map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:de'], ['get', 'name:latin'], ['get', 'name']]);
     }
   }
+  // Jede Form einmal pro Stufe als Bild, doppelt aufgelöst, mit dunklem Rand wie bei den Kreisen
+  for (const [form, pfad] of Object.entries(FORMEN)) for (const stufe of STUFEN) {
+    const ctx = Object.assign(document.createElement('canvas'), { width: 52, height: 52 }).getContext('2d');
+    ctx.setTransform(2, 0, 0, 2, 2, 2);
+    const p = new Path2D(pfad);
+    Object.assign(ctx, { lineWidth: 2, lineJoin: 'round', strokeStyle: 'rgba(0,0,0,.7)', fillStyle: farbe(stufe) });
+    ctx.stroke(p);
+    ctx.fill(p);
+    map.addImage(`${form}-${stufe}`, ctx.getImageData(0, 0, 52, 52), { pixelRatio: 2 });
+  }
+  const groesse = (skala, sonst) => skala ? ['case', ['has', 'wert'], ['interpolate', ['linear'], ['get', 'wert'], ...skala], sonst] : sonst;
   for (const eb of EBENEN) {
     map.addSource(eb.id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({
+    map.addLayer(eb.form === 'kreis' ? {
       id: eb.id, type: 'circle', source: eb.id,
       paint: {
         'circle-color': ['match', ['get', 'stufe'], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'), farbe('beobachtung')],
-        // shortcut: Skala passt für Erdbeben-Stärken (2,5–9); andere Ebenen mit anderem "wert" brauchen eine eigene Skala.
-        'circle-radius': ['case', ['has', 'wert'], ['interpolate', ['linear'], ['get', 'wert'], 2.5, 3, 5, 6, 7, 12, 9, 20], 5],
+        'circle-radius': groesse(eb.skala, 5),
         'circle-opacity': 0.8,
         'circle-stroke-width': 1,
         'circle-stroke-color': 'rgba(0,0,0,.6)',
       },
       layout: { 'circle-sort-key': ['coalesce', ['get', 'wert'], 0] },
+    } : {
+      id: eb.id, type: 'symbol', source: eb.id,
+      paint: { 'icon-opacity': 0.9 },
+      layout: {
+        'icon-image': ['concat', eb.form, '-', ['get', 'stufe']],
+        'icon-size': groesse(eb.skala, 0.7),
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'symbol-sort-key': ['match', ['get', 'stufe'], 'hoch', 2, 'erhoeht', 1, 0], // Rot oben
+      },
     });
     map.on('click', eb.id, e => oeffnen(eintragNach.get(e.features[0].properties.key)));
     map.on('mouseenter', eb.id, () => map.getCanvas().style.cursor = 'pointer');
@@ -301,7 +357,7 @@ function oeffnen(e) {
   popup = new maplibregl.Popup({ maxWidth: '320px', className: 'popup' })
     .setLngLat([e.lon, e.lat])
     .setHTML(`<h3 style="--f:${farbe(e.stufe)}">${esc(e.titel)}</h3>
-      <p class="zeit">${vor(t)} · ${new Date(t).toLocaleString('de-DE')}</p>
+      <p class="zeit">${e.laufend ? `läuft noch, zuletzt aktualisiert ${vor(t)}` : vor(t)} · ${new Date(t).toLocaleString('de-DE')}</p>
       ${e.text ? `<p>${esc(e.text)}</p>` : ''}
       <p class="quelle">Quelle: ${esc(e.quelle)}</p>${link}`)
     .addTo(map);
@@ -335,7 +391,7 @@ function zeichnen() {
   const grenze = Date.now() - stunden * 3600e3;
   const neueste = [];
   for (const eb of EBENEN) {
-    const sichtbar = (daten[eb.id] || []).filter(e => e.t >= grenze);
+    const sichtbar = (daten[eb.id] || []).filter(e => e.laufend || e.t >= grenze);
     const zeile = document.querySelector(`.ebene[data-id="${eb.id}"]`);
     zeile.classList.toggle('leer', !daten[eb.id]);
     zeile.querySelector('.anzahl').textContent = daten[eb.id] ? sichtbar.length : 'keine Daten';
@@ -352,7 +408,7 @@ function zeichnen() {
   neueste.sort((a, b) => b.t - a.t);
   $('neueste-zahl').textContent = neueste.length;
   $('neueste').innerHTML = neueste.slice(0, 30).map(e => `<li><button class="ereignis" style="--f:${farbe(e.stufe)}" data-key="${esc(e.ebene + '|' + e.id)}">
-      ${esc(e.titel)}<span>${vor(e.t)} · ${esc(e.quelle)}</span></button></li>`).join('')
+      ${esc(e.titel)}<span>${e.laufend ? 'läuft · ' : ''}${vor(e.t)} · ${esc(e.quelle)}</span></button></li>`).join('')
     || '<li class="leer-hinweis">Keine Ereignisse im gewählten Zeitraum.</li>';
 }
 
@@ -367,7 +423,7 @@ function uhr() {
 
 // ---- Bedienelemente ----
 $('ebenen-liste').innerHTML = EBENEN.map(eb => `<li class="ebene" data-id="${eb.id}">
-    <label><input type="checkbox" ${an[eb.id] ? 'checked' : ''}> ${eb.symbol} ${esc(eb.name)}</label>
+    <label><input type="checkbox" ${an[eb.id] ? 'checked' : ''}><svg viewBox="-1 -1 26 26" aria-hidden="true"><path d="${FORMEN[eb.form]}"/></svg>${esc(eb.name)}</label>
     <span class="anzahl">…</span>
     <button class="info-knopf" aria-label="Info zu ${esc(eb.name)}" aria-expanded="false" aria-controls="info-${eb.id}">i</button>
     <p class="info-text" id="info-${eb.id}" hidden>${esc(eb.info)} Quelle: ${esc(eb.quelle)}.</p>

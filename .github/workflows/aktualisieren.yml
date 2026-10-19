@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Pakete installieren
+        run: npm ci
+
       - name: Daten holen
         run: node scripts/daten-holen.mjs
         # API-Schlüssel kommen später als GitHub Secrets hierher, z. B.:
