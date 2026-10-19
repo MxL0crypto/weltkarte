@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weltkarte</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --panel: #111;
+  --panel-hell: #1a1a1a;
+  --rand: #262626;
+  --rand-hell: #3a3a3a;
+  --text: #d4d4d4;
+  --text-schwach: #7c7c7c;
+  --gruen: #3ee07a;
+  --hoch: #ff4545;
+  --erhoeht: #ff9f1c;
+  --beobachtung: #ffd60a;
+  --grau: #555;
+  --schrift: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--text); font: 12px/1.45 var(--schrift);
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--gruen); outline-offset: 1px; }
+h1, h2 { margin: 0; font-size: inherit; }
+
+/* Kopfzeile */
+.kopf {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 20px;
+  padding: 10px 14px; border-bottom: 1px solid var(--rand); background: var(--panel);
+}
+.kopf h1 { font-size: 15px; font-weight: 700; letter-spacing: .18em; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--gruen); font-weight: 600; }
+.live::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+.live.alt { color: var(--grau); }
+.alter { color: var(--text-schwach); }
+.uhren { margin-left: auto; display: flex; gap: 16px; color: var(--text-schwach); }
+.uhren b { color: var(--text); font-weight: 600; }
+
+/* Hauptbereich */
+.haupt { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 380px; }
+.kartenbereich { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--rand); }
+.leiste {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px; border-bottom: 1px solid var(--rand);
+}
+.titel { font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.karte-huelle { position: relative; flex: 1; min-height: 0; }
+#karte { position: absolute; inset: 0; }
+
+/* Knöpfe */
+.gruppe { display: flex; border: 1px solid var(--rand); background: var(--panel); }
+.gruppe button, .kartenknoepfe button {
+  min-width: 34px; padding: 6px 9px; border: 0; background: transparent; color: var(--text-schwach);
+}
+.gruppe button + button { border-left: 1px solid var(--rand); }
+.gruppe button:hover, .kartenknoepfe button:hover { color: var(--text); background: var(--panel-hell); }
+.gruppe button[aria-pressed="true"] { background: var(--gruen); color: #04140a; font-weight: 700; }
+
+.zeitfilter { position: absolute; top: 10px; left: 10px; }
+.kartenknoepfe { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.kartenknoepfe button {
+  width: 32px; height: 32px; padding: 0; font-size: 16px;
+  border: 1px solid var(--rand); background: var(--panel); color: var(--text);
+}
+
+/* Ebenen-Panel */
+.ebenen {
+  position: absolute; left: 10px; bottom: 40px; width: 270px; max-height: calc(100% - 100px);
+  display: flex; flex-direction: column; border: 1px solid var(--rand); background: rgba(14,14,14,.95);
+}
+.ebenen-kopf {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: 8px 10px; border: 0; background: none; font-weight: 700; letter-spacing: .12em;
+}
+.ebenen-kopf::after { content: '▾'; color: var(--text-schwach); }
+.ebenen-kopf[aria-expanded="false"]::after { content: '▸'; }
+.ebenen ul { list-style: none; margin: 0; padding: 0 0 6px; overflow-y: auto; border-top: 1px solid var(--rand); }
+.ebene { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 5px 10px; }
+.ebene label { display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: uppercase; letter-spacing: .04em; }
+.ebene input { accent-color: var(--gruen); width: 14px; height: 14px; margin: 0; }
+.anzahl { color: var(--text-schwach); }
+.ebene.leer label, .ebene.leer .anzahl { color: var(--grau); }
+.info-knopf {
+  width: 18px; height: 18px; padding: 0; border: 1px solid var(--rand-hell); border-radius: 50%;
+  background: none; font-size: 10px; color: var(--text-schwach);
+}
+.info-knopf[aria-expanded="true"] { border-color: var(--gruen); color: var(--gruen); }
+.info-text { grid-column: 1 / -1; margin: 2px 0 4px; color: var(--text-schwach); }
+
+/* Legende + Quellenangaben */
+.legende {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 5px 10px;
+  border: 1px solid var(--rand); background: rgba(14,14,14,.92); white-space: nowrap;
+}
+.legende b { letter-spacing: .1em; }
+.legende span::before {
+  content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; background: var(--f);
+}
+.maplibregl-ctrl-attrib { background: rgba(10,10,10,.75) !important; color: var(--text-schwach); font: 10px var(--schrift); }
+.maplibregl-ctrl-attrib a { color: var(--text-schwach); }
+.maplibregl-ctrl-attrib-button { filter: invert(1); }
+
+/* Popup */
+.maplibregl-popup-content {
+  padding: 10px 26px 10px 12px; border: 1px solid var(--rand-hell); border-radius: 0;
+  background: var(--panel); color: var(--text); font: 12px/1.45 var(--schrift);
+}
+.maplibregl-popup { z-index: 2; } /* über Ebenen-Panel und Legende */
+.maplibregl-popup-tip { display: none; }
+.maplibregl-popup-close-button { width: 24px; height: 24px; color: var(--text-schwach); font-size: 16px; }
+.popup h3 { margin: 0 0 6px; font-size: 13px; border-left: 3px solid var(--f); padding-left: 7px; }
+.popup p { margin: 3px 0; }
+.popup .zeit, .popup .quelle { color: var(--text-schwach); }
+.popup a { color: var(--gruen); }
+
+/* Rechte Spalte */
+.spalte { overflow-y: auto; }
+.panel { border-bottom: 1px solid var(--rand); }
+.panel-kopf {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px;
+  border: 0; background: var(--panel); font-weight: 700; letter-spacing: .12em; text-align: left;
+}
+.panel-kopf::after { content: '▾'; margin-left: auto; color: var(--text-schwach); }
+.panel-kopf[aria-expanded="false"]::after { content: '▸'; }
+.zahl { color: var(--hoch); font-weight: 600; letter-spacing: 0; }
+.zahl::before { content: '● '; font-size: 9px; vertical-align: 1px; }
+.neueste { list-style: none; margin: 0; padding: 0; }
+.ereignis {
+  display: block; width: 100%; padding: 8px 12px 8px 10px; text-align: left;
+  border: 0; border-left: 3px solid var(--f); border-top: 1px solid var(--rand); background: none;
+}
+.ereignis:hover { background: var(--panel-hell); }
+.ereignis span { display: block; color: var(--text-schwach); font-size: 11px; margin-top: 2px; }
+.leer-hinweis { padding: 12px; color: var(--text-schwach); }
+
+/* Handy */
+@media (max-width: 799px) {
+  body { height: auto; overflow: auto; }
+  .haupt { display: block; }
+  .kartenbereich { height: 60vh; border-right: 0; border-bottom: 1px solid var(--rand); }
+  .uhren { margin-left: 0; width: 100%; }
+  /* Unten ist die Quellenangabe, darum Legende und Ebenen oben links unter dem Zeitfilter */
+  .legende { top: 48px; bottom: auto; left: 10px; transform: none; font-size: 11px; }
+  .ebenen { top: 86px; bottom: auto; width: auto; max-width: calc(100% - 70px); max-height: calc(100% - 96px); }
+}
+</style>
+</head>
+<body>
+<header class="kopf">
+  <h1>WELTKARTE</h1>
+  <span class="live alt" id="live">LIVE</span>
+  <span class="alter" id="alter">Daten werden geladen …</span>
+  <span class="uhren"><span><b id="uhr-utc">--:--:--</b> UTC</span><span><b id="uhr-lokal">--:--:--</b> Ortszeit</span></span>
+</header>
+
+<main class="haupt">
+  <section class="kartenbereich" aria-label="Karte">
+    <div class="leiste">
+      <h2 class="titel">Globale Lage</h2>
+      <div class="gruppe" role="group" aria-label="Kartenansicht">
+        <button data-projektion="mercator" aria-pressed="true" title="Flache Karte">2D</button>
+        <button data-projektion="globe" aria-pressed="false" title="Globus">3D</button>
+      </div>
+    </div>
+    <div class="karte-huelle">
+      <div id="karte"></div>
+      <div class="gruppe zeitfilter" id="zeitfilter" role="group" aria-label="Zeitraum"></div>
+      <div class="kartenknoepfe">
+        <button id="zoom-rein" aria-label="Hineinzoomen" title="Hineinzoomen">+</button>
+        <button id="zoom-raus" aria-label="Herauszoomen" title="Herauszoomen">−</button>
+        <button id="weltansicht" aria-label="Weltansicht" title="Weltansicht">⌂</button>
+      </div>
+      <div class="ebenen">
+        <button class="ebenen-kopf" aria-expanded="true" aria-controls="ebenen-liste">EBENEN</button>
+        <ul id="ebenen-liste"></ul>
+      </div>
+      <div class="legende" aria-label="Legende">
+        <b>LEGENDE</b>
+        <span style="--f: var(--hoch)">Hoch</span>
+        <span style="--f: var(--erhoeht)">Erhöht</span>
+        <span style="--f: var(--beobachtung)">Beobachtung</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Rechte Spalte: weitere Panels einfach als neue <section class="panel"> darunter setzen. -->
+  <aside class="spalte">
+    <section class="panel">
+      <h2><button class="panel-kopf" aria-expanded="true" aria-controls="neueste">NEUESTE EREIGNISSE <span class="zahl" id="neueste-zahl"></span></button></h2>
+      <ol class="neueste" id="neueste"></ol>
+    </section>
+  </aside>
+</main>
+
+<script>
+// Alle Ebenen der Karte. Neue Ebene = neuer Eintrag hier (+ Quelle im Daten-Skript).
+const EBENEN = [
+  {
+    id: 'erdbeben', name: 'Erdbeben', datei: 'data/erdbeben.json', symbol: '◉', standardAn: true, quelle: 'USGS',
+    info: 'Erdbeben ab Stärke 2,5 weltweit aus den letzten 7 Tagen. Je größer der Punkt, desto stärker das Beben. Ab 5 erhöht, ab 6 hoch.',
+  },
+];
+const ZEITRAEUME = [['1h', 1], ['6h', 6], ['24h', 24], ['48h', 48], ['7d', 168], ['Alle', Infinity]];
+const NEU_LADEN_MIN = 5;
+const LIVE_GRENZE_MIN = 90;
+const SPEICHER = 'weltkarte-ebenen';
+
+const daten = {};       // Ebenen-ID -> Einträge, oder null wenn die Datei fehlt
+const eintragNach = new Map(); // "ebene|id" -> Eintrag (für Klicks)
+let status = null;
+let stunden = 24;
+let popup = null;
+const an = gemerkteEbenen();
+const farbe = name => getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim();
+const $ = id => document.getElementById(id);
+
+function gemerkteEbenen() {
+  let gespeichert = {};
+  try { gespeichert = JSON.parse(localStorage.getItem(SPEICHER)) || {}; } catch {}
+  return Object.fromEntries(EBENEN.map(e => [e.id, gespeichert[e.id] ?? e.standardAn]));
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, z => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[z]));
+}
+
+function vor(ms) {
+  const min = Math.floor((Date.now() - ms) / 60000);
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min.`;
+  if (min < 48 * 60) return `vor ${Math.floor(min / 60)} Std.`;
+  return `vor ${Math.floor(min / 1440)} Tagen`;
+}
+
+// ---- Karte ----
+let projektion = 'mercator';
+// Zoom, bei dem die ganze Welt passt. Der Globus braucht mehr, sonst ist er winzig.
+function weltZoom() {
+  const k = $('karte');
+  return projektion === 'globe'
+    ? Math.log2(Math.min(k.clientWidth, k.clientHeight) * 2.6 / 512)
+    : Math.max(0, Math.log2(k.clientWidth / 512));
+}
+const map = new maplibregl.Map({
+  container: 'karte',
+  style: 'https://tiles.openfreemap.org/styles/dark',
+  center: [20, 25],
+  zoom: weltZoom(),
+  attributionControl: { customAttribution: [...new Set(EBENEN.map(e => e.quelle))].join(', ') },
+  locale: { 'Popup.Close': 'Schließen', 'AttributionControl.ToggleAttribution': 'Quellenangaben ein/aus' },
+});
+
+map.on('load', () => {
+  // Ortsnamen auf Deutsch, wo vorhanden
+  for (const l of map.getStyle().layers) {
+    const feld = l.type === 'symbol' && l.layout?.['text-field'];
+    if (feld && JSON.stringify(feld).includes('name')) {
+      map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:de'], ['get', 'name:latin'], ['get', 'name']]);
+    }
+  }
+  for (const eb of EBENEN) {
+    map.addSource(eb.id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: eb.id, type: 'circle', source: eb.id,
+      paint: {
+        'circle-color': ['match', ['get', 'stufe'], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'), farbe('beobachtung')],
+        // shortcut: Skala passt für Erdbeben-Stärken (2,5–9); andere Ebenen mit anderem "wert" brauchen eine eigene Skala.
+        'circle-radius': ['case', ['has', 'wert'], ['interpolate', ['linear'], ['get', 'wert'], 2.5, 3, 5, 6, 7, 12, 9, 20], 5],
+        'circle-opacity': 0.8,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': 'rgba(0,0,0,.6)',
+      },
+      layout: { 'circle-sort-key': ['coalesce', ['get', 'wert'], 0] },
+    });
+    map.on('click', eb.id, e => oeffnen(eintragNach.get(e.features[0].properties.key)));
+    map.on('mouseenter', eb.id, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', eb.id, () => map.getCanvas().style.cursor = '');
+  }
+  zeichnen();
+});
+
+function oeffnen(e) {
+  if (!e) return;
+  popup?.remove();
+  const t = Date.parse(e.zeit);
+  const link = /^https?:\/\//.test(e.link || '') ? `<p><a href="${esc(e.link)}" target="_blank" rel="noopener">Quelle öffnen ↗</a></p>` : '';
+  popup = new maplibregl.Popup({ maxWidth: '320px', className: 'popup' })
+    .setLngLat([e.lon, e.lat])
+    .setHTML(`<h3 style="--f:${farbe(e.stufe)}">${esc(e.titel)}</h3>
+      <p class="zeit">${vor(t)} · ${new Date(t).toLocaleString('de-DE')}</p>
+      ${e.text ? `<p>${esc(e.text)}</p>` : ''}
+      <p class="quelle">Quelle: ${esc(e.quelle)}</p>${link}`)
+    .addTo(map);
+}
+
+// ---- Daten laden und anzeigen ----
+async function laden() {
+  const t = Date.now(); // ?t= umgeht Browser- und GitHub-Cache
+  await Promise.all(EBENEN.map(async eb => {
+    try {
+      const res = await fetch(`${eb.datei}?t=${t}`);
+      if (!res.ok) throw new Error(res.status);
+      daten[eb.id] = (await res.json()).eintraege.map(e => ({ ...e, ebene: eb.id, t: Date.parse(e.zeit) }));
+    } catch {
+      daten[eb.id] = null;
+    }
+  }));
+  try {
+    const res = await fetch(`data/status.json?t=${t}`);
+    status = res.ok ? await res.json() : null;
+  } catch {
+    status = null;
+  }
+  eintragNach.clear();
+  for (const eb of EBENEN) for (const e of daten[eb.id] || []) eintragNach.set(`${eb.id}|${e.id}`, e);
+  zeichnen();
+  uhr();
+}
+
+function zeichnen() {
+  const grenze = Date.now() - stunden * 3600e3;
+  const neueste = [];
+  for (const eb of EBENEN) {
+    const sichtbar = (daten[eb.id] || []).filter(e => e.t >= grenze);
+    const zeile = document.querySelector(`.ebene[data-id="${eb.id}"]`);
+    zeile.classList.toggle('leer', !daten[eb.id]);
+    zeile.querySelector('.anzahl').textContent = daten[eb.id] ? sichtbar.length : 'keine Daten';
+    map.getSource(eb.id)?.setData({
+      type: 'FeatureCollection',
+      features: (an[eb.id] ? sichtbar : []).map(e => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [e.lon, e.lat] },
+        properties: { key: `${eb.id}|${e.id}`, stufe: e.stufe, ...(e.wert != null && { wert: e.wert }) },
+      })),
+    });
+    if (an[eb.id]) neueste.push(...sichtbar);
+  }
+  neueste.sort((a, b) => b.t - a.t);
+  $('neueste-zahl').textContent = neueste.length;
+  $('neueste').innerHTML = neueste.slice(0, 30).map(e => `<li><button class="ereignis" style="--f:${farbe(e.stufe)}" data-key="${esc(e.ebene + '|' + e.id)}">
+      ${esc(e.titel)}<span>${vor(e.t)} · ${esc(e.quelle)}</span></button></li>`).join('')
+    || '<li class="leer-hinweis">Keine Ereignisse im gewählten Zeitraum.</li>';
+}
+
+function uhr() {
+  const jetzt = new Date();
+  $('uhr-utc').textContent = jetzt.toISOString().slice(11, 19);
+  $('uhr-lokal').textContent = jetzt.toLocaleTimeString('de-DE');
+  const stand = Date.parse(status?.aktualisiert);
+  $('alter').textContent = stand ? `Daten von ${vor(stand)}` : 'Keine Daten';
+  $('live').classList.toggle('alt', !(Date.now() - stand < LIVE_GRENZE_MIN * 60000));
+}
+
+// ---- Bedienelemente ----
+$('ebenen-liste').innerHTML = EBENEN.map(eb => `<li class="ebene" data-id="${eb.id}">
+    <label><input type="checkbox" ${an[eb.id] ? 'checked' : ''}> ${eb.symbol} ${esc(eb.name)}</label>
+    <span class="anzahl">…</span>
+    <button class="info-knopf" aria-label="Info zu ${esc(eb.name)}" aria-expanded="false" aria-controls="info-${eb.id}">i</button>
+    <p class="info-text" id="info-${eb.id}" hidden>${esc(eb.info)} Quelle: ${esc(eb.quelle)}.</p>
+  </li>`).join('');
+
+$('ebenen-liste').addEventListener('change', e => {
+  an[e.target.closest('.ebene').dataset.id] = e.target.checked;
+  try { localStorage.setItem(SPEICHER, JSON.stringify(an)); } catch {}
+  zeichnen();
+});
+
+$('zeitfilter').innerHTML = ZEITRAEUME.map(([text, h]) => `<button data-stunden="${h}" aria-pressed="${h === stunden}">${text}</button>`).join('');
+$('zeitfilter').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  stunden = Number(knopf.dataset.stunden);
+  for (const b of $('zeitfilter').children) b.setAttribute('aria-pressed', b === knopf);
+  zeichnen();
+});
+
+document.querySelector('[aria-label="Kartenansicht"]').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  projektion = knopf.dataset.projektion;
+  map.setProjection({ type: projektion });
+  if (map.getZoom() < weltZoom()) map.easeTo({ zoom: weltZoom() });
+  for (const b of knopf.parentElement.children) b.setAttribute('aria-pressed', b === knopf);
+});
+
+$('zoom-rein').onclick = () => map.zoomIn();
+$('zoom-raus').onclick = () => map.zoomOut();
+$('weltansicht').onclick = () => map.flyTo({ center: [20, 25], zoom: weltZoom() });
+
+$('neueste').addEventListener('click', ev => {
+  const e = eintragNach.get(ev.target.closest('.ereignis')?.dataset.key);
+  if (!e) return;
+  if (matchMedia('(max-width: 799px)').matches) $('karte').scrollIntoView({ behavior: 'smooth' });
+  map.flyTo({ center: [e.lon, e.lat], zoom: Math.max(map.getZoom(), 4) });
+  oeffnen(e);
+});
+
+// Ein- und Ausklappen für alles mit aria-controls (Ebenen-Panel, Panels, "i"-Knöpfe)
+document.addEventListener('click', e => {
+  const knopf = e.target.closest('button[aria-controls]');
+  if (!knopf) return;
+  const ziel = $(knopf.getAttribute('aria-controls'));
+  ziel.hidden = !ziel.hidden;
+  knopf.setAttribute('aria-expanded', !ziel.hidden);
+});
+
+// Auf dem Handy startet das Ebenen-Panel zugeklappt
+if (matchMedia('(max-width: 799px)').matches) document.querySelector('.ebenen-kopf').click();
+
+laden();
+setInterval(laden, NEU_LADEN_MIN * 60000);
+setInterval(uhr, 1000);
+</script>
+</body>
+</html>

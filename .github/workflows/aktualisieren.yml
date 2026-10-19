@@ -1,0 +1,49 @@
+name: Daten aktualisieren und veröffentlichen
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Nie zwei Läufe gleichzeitig
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  aktualisieren:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.veroeffentlichen.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Daten holen
+        run: node scripts/daten-holen.mjs
+        # API-Schlüssel kommen später als GitHub Secrets hierher, z. B.:
+        # env:
+        #   BEISPIEL_SCHLUESSEL: ${{ secrets.BEISPIEL_SCHLUESSEL }}
+
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p _site
+          cp -r index.html data _site/
+          if [ -d config ]; then cp -r config _site/; fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: veroeffentlichen
+        uses: actions/deploy-pages@v5
