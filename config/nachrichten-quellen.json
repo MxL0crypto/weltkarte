@@ -1,0 +1,11 @@
+[
+  { "name": "tagesschau", "url": "https://www.tagesschau.de/xml/rss2/", "sprache": "de" },
+  { "name": "DW (Deutsch)", "url": "https://rss.dw.com/rdf/rss-de-all", "sprache": "de" },
+  { "name": "SPIEGEL Ausland", "url": "https://www.spiegel.de/ausland/index.rss", "sprache": "de" },
+  { "name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "sprache": "en" },
+  { "name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "sprache": "en" },
+  { "name": "The Guardian World", "url": "https://www.theguardian.com/world/rss", "sprache": "en" },
+  { "name": "France 24", "url": "https://www.france24.com/en/rss", "sprache": "en" },
+  { "name": "DW (English)", "url": "https://rss.dw.com/rdf/rss-en-all", "sprache": "en" },
+  { "name": "UN News", "url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml", "sprache": "en" }
+]

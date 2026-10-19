@@ -34,9 +34,9 @@ jobs:
 
       - name: Daten holen
         run: node scripts/daten-holen.mjs
-        # API-Schlüssel kommen später als GitHub Secrets hierher, z. B.:
-        # env:
-        #   BEISPIEL_SCHLUESSEL: ${{ secrets.BEISPIEL_SCHLUESSEL }}
+        # API-Schlüssel nur als GitHub Secrets. Fehlt einer, läuft alles andere weiter.
+        env:
+          WEBZ_API_KEY: ${{ secrets.WEBZ_API_KEY }}
 
       - name: Seite zusammenstellen
         run: |

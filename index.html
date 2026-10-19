@@ -148,6 +148,18 @@ h1, h2 { margin: 0; font-size: inherit; }
 .ereignis span { display: block; color: var(--text-schwach); font-size: 11px; margin-top: 2px; }
 .leer-hinweis { padding: 12px; color: var(--text-schwach); }
 
+/* Live-Nachrichten: Stufen-Punkt statt Farbbalken, Liste scrollt für sich */
+.filter { margin: 0 12px 10px; width: max-content; max-width: calc(100% - 24px); }
+.nachrichten { max-height: 45vh; overflow-y: auto; border-top: 1px solid var(--rand); }
+.nachrichten li:first-child .ereignis { border-top: 0; }
+.meldung { position: relative; padding-left: 26px; border-left: 0; color: inherit; text-decoration: none; }
+.meldung::before { content: ''; position: absolute; left: 10px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: var(--f); }
+.haufen { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.haufen li { padding: 5px 0; border-top: 1px solid var(--rand); }
+.haufen a { border-left: 3px solid var(--f); padding-left: 6px; display: block; color: var(--text); text-decoration: none; }
+.haufen a:hover { color: var(--gruen); }
+.haufen span { display: block; padding-left: 9px; color: var(--text-schwach); font-size: 11px; }
+
 /* Handy */
 @media (max-width: 799px) {
   body { height: auto; overflow: auto; }
@@ -201,6 +213,18 @@ h1, h2 { margin: 0; font-size: inherit; }
   <!-- Rechte Spalte: weitere Panels einfach als neue <section class="panel"> darunter setzen. -->
   <aside class="spalte">
     <section class="panel">
+      <h2><button class="panel-kopf" aria-expanded="true" aria-controls="nachrichten-inhalt">LIVE-NACHRICHTEN <span class="zahl" id="nachrichten-zahl"></span></button></h2>
+      <div id="nachrichten-inhalt">
+        <div class="gruppe filter" id="nachrichten-filter" role="group" aria-label="Nachrichten filtern">
+          <button data-filter="alle" aria-pressed="true">Alle</button>
+          <button data-filter="de" aria-pressed="false">Deutsch</button>
+          <button data-filter="int" aria-pressed="false">International</button>
+          <button data-filter="hoch" aria-pressed="false">Nur hoch</button>
+        </div>
+        <ol class="neueste nachrichten" id="nachrichten-liste"></ol>
+      </div>
+    </section>
+    <section class="panel">
       <h2><button class="panel-kopf" aria-expanded="true" aria-controls="neueste">NEUESTE EREIGNISSE <span class="zahl" id="neueste-zahl"></span></button></h2>
       <ol class="neueste" id="neueste"></ol>
     </section>
@@ -209,8 +233,25 @@ h1, h2 { margin: 0; font-size: inherit; }
 
 <script>
 // Alle Ebenen der Karte. Neue Ebene = neuer Eintrag hier (+ Quelle im Daten-Skript).
-// form: Zeichen aus FORMEN. skala: Größe nach "wert" (Paare wert, Größe). Spätere Ebenen liegen oben.
+// form: Zeichen aus FORMEN ('flaeche' = Länder einfärben über das Feld "land"). skala: Größe nach "wert" (Paare wert, Größe).
+// deckkraft: für große, durchsichtige Kreise. cluster: nahe Punkte zu Zahlenblasen. liste: false = nicht in "Neueste Ereignisse".
+// Spätere Ebenen liegen oben.
 const EBENEN = [
+  {
+    id: 'konfliktzonen', name: 'Konfliktzonen', datei: 'data/konfliktzonen.json', form: 'flaeche', standardAn: true, liste: false,
+    quelle: 'eigene Liste, Grenzen: Natural Earth',
+    info: 'Länder mit laufenden bewaffneten Konflikten, eingefärbt nach Stufe. Die Liste wird von Hand gepflegt (config/konfliktzonen.json); wann sie zuletzt geprüft wurde, steht im Popup.',
+  },
+  {
+    id: 'brennpunkte', name: 'Brennpunkte', datei: 'data/brennpunkte.json', form: 'kreis', standardAn: true, liste: false,
+    skala: [8, 14, 30, 24, 80, 40], deckkraft: 0.25, quelle: 'Auswertung der Nachrichten',
+    info: 'Länder, über die in den letzten 24 Stunden besonders viel berichtet wurde. Jede Meldung zählt je nach Stufe 3, 2 oder 1 Punkt. Je mehr Punkte, desto größer der Kreis.',
+  },
+  {
+    id: 'nachrichten', name: 'Nachrichten', datei: 'data/nachrichten.json', form: 'meldung', standardAn: true, liste: false, cluster: true,
+    quelle: 'tagesschau, DW, SPIEGEL, BBC, Al Jazeera, The Guardian, France 24, UN News',
+    info: 'Meldungen deutscher und internationaler Nachrichtenseiten aus den letzten 48 Stunden, an dem Ort, der in der Meldung genannt wird. Die Zuordnung passiert automatisch und kann danebenliegen. Mehrere Meldungen nah beieinander werden zu einer Zahlenblase.',
+  },
   {
     id: 'erdbeben', name: 'Erdbeben', datei: 'data/erdbeben.json', form: 'kreis', standardAn: true, quelle: 'USGS',
     skala: [2.5, 3, 5, 6, 7, 12, 9, 20],
@@ -246,7 +287,11 @@ const FORMEN = {
   dreieck: 'M2 21 9.5 7h5L22 21z',
   tropfen: 'M12 2C9 7 5 10.5 5 15a7 7 0 0 0 14 0c0-4.5-4-8-7-13z',
   warnung: 'M12 1.5 23 21.5H1zM11 8.5v7h2v-7zM11 17v2.5h2V17z', // gegenläufige Teilpfade (Auge, Ausrufezeichen) = Loch
+  meldung: 'M2.5 3.5h19v13H10l-5 4.5v-4.5H2.5z',
+  flaeche: 'M2 5.5 8.5 3l7 2.5L22 3v15.5L15.5 21l-7-2.5L2 21z',
 };
+const CLUSTER_BIS = 16; // bis zu diesem Zoom fassen Nachrichten-Ebenen nahe Punkte zusammen
+const LISTE_AB = 7;     // müsste man für eine Zahlenblase weiter hineinzoomen, zeigt der Klick gleich die Liste (Orte sind nur stadtgenau)
 const STUFEN = ['hoch', 'erhoeht', 'beobachtung'];
 const ZEITRAEUME = [['1h', 1], ['6h', 6], ['24h', 24], ['48h', 48], ['7d', 168], ['Alle', Infinity]];
 const NEU_LADEN_MIN = 5;
@@ -255,9 +300,13 @@ const SPEICHER = 'weltkarte-ebenen';
 
 const daten = {};       // Ebenen-ID -> Einträge, oder null wenn die Datei fehlt
 const eintragNach = new Map(); // "ebene|id" -> Eintrag (für Klicks)
+let grenzen = null;     // Ländercode -> Umriss, für Ebenen mit form 'flaeche'
 let status = null;
 let stunden = 24;
+let nachrichtenFilter = 'alle';
 let popup = null;
+const NACHRICHTEN_FILTER = { alle: () => true, de: m => m.sprache === 'de', int: m => m.sprache !== 'de', hoch: m => m.stufe === 'hoch' };
+const istLink = u => /^https?:\/\//.test(u || '');
 const an = gemerkteEbenen();
 const farbe = name => getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim();
 const $ = id => document.getElementById(id);
@@ -319,20 +368,30 @@ map.on('load', () => {
     map.addImage(`${form}-${stufe}`, ctx.getImageData(0, 0, 52, 52), { pixelRatio: 2 });
   }
   const groesse = (skala, sonst) => skala ? ['case', ['has', 'wert'], ['interpolate', ['linear'], ['get', 'wert'], ...skala], sonst] : sonst;
+  const stufenFarbe = ['match', ['get', 'stufe'], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'), farbe('beobachtung')];
+  const zaehlen = stufe => ['+', ['case', ['==', ['get', 'stufe'], stufe], 1, 0]];
+  const unterNamen = map.getStyle().layers.find(l => l.type === 'symbol')?.id; // Flächen unter die Ortsnamen der Grundkarte
   for (const eb of EBENEN) {
-    map.addSource(eb.id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer(eb.form === 'kreis' ? {
-      id: eb.id, type: 'circle', source: eb.id,
+    map.addSource(eb.id, {
+      type: 'geojson', data: { type: 'FeatureCollection', features: [] },
+      ...(eb.cluster && { cluster: true, clusterRadius: 40, clusterMaxZoom: CLUSTER_BIS, clusterProperties: { hoch: zaehlen('hoch'), erhoeht: zaehlen('erhoeht') } }),
+    });
+    const nurEinzelne = eb.cluster ? { filter: ['!', ['has', 'point_count']] } : {};
+    if (eb.form === 'flaeche') {
+      map.addLayer({ id: eb.id, type: 'fill', source: eb.id, paint: { 'fill-color': stufenFarbe, 'fill-opacity': 0.25 } }, unterNamen);
+      map.addLayer({ id: eb.id + '-rand', type: 'line', source: eb.id, paint: { 'line-color': stufenFarbe, 'line-opacity': 0.6, 'line-width': 1 } }, unterNamen);
+    } else map.addLayer(eb.form === 'kreis' ? {
+      id: eb.id, type: 'circle', source: eb.id, ...nurEinzelne,
       paint: {
-        'circle-color': ['match', ['get', 'stufe'], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'), farbe('beobachtung')],
+        'circle-color': stufenFarbe,
         'circle-radius': groesse(eb.skala, 5),
-        'circle-opacity': 0.8,
+        'circle-opacity': eb.deckkraft ?? 0.8,
         'circle-stroke-width': 1,
-        'circle-stroke-color': 'rgba(0,0,0,.6)',
+        'circle-stroke-color': eb.deckkraft ? stufenFarbe : 'rgba(0,0,0,.6)',
       },
       layout: { 'circle-sort-key': ['coalesce', ['get', 'wert'], 0] },
     } : {
-      id: eb.id, type: 'symbol', source: eb.id,
+      id: eb.id, type: 'symbol', source: eb.id, ...nurEinzelne,
       paint: { 'icon-opacity': 0.9 },
       layout: {
         'icon-image': ['concat', eb.form, '-', ['get', 'stufe']],
@@ -342,24 +401,71 @@ map.on('load', () => {
         'symbol-sort-key': ['match', ['get', 'stufe'], 'hoch', 2, 'erhoeht', 1, 0], // Rot oben
       },
     });
-    map.on('click', eb.id, e => oeffnen(eintragNach.get(e.features[0].properties.key)));
-    map.on('mouseenter', eb.id, () => map.getCanvas().style.cursor = 'pointer');
-    map.on('mouseleave', eb.id, () => map.getCanvas().style.cursor = '');
+    if (eb.cluster) {
+      // Zahlenblase in der Farbe der schlimmsten Meldung darin
+      map.addLayer({
+        id: eb.id + '-haufen', type: 'circle', source: eb.id, filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': ['case', ['>', ['get', 'hoch'], 0], farbe('hoch'), ['>', ['get', 'erhoeht'], 0], farbe('erhoeht'), farbe('beobachtung')],
+          'circle-radius': ['interpolate', ['linear'], ['get', 'point_count'], 2, 10, 40, 20],
+          'circle-opacity': 0.85,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': 'rgba(0,0,0,.6)',
+        },
+      });
+      map.addLayer({
+        id: eb.id + '-zahl', type: 'symbol', source: eb.id, filter: ['has', 'point_count'],
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 11, 'text-allow-overlap': true },
+        paint: { 'text-color': '#000' },
+      });
+    }
+  }
+  // Ein Klick-Handler für alle Ebenen: queryRenderedFeatures liefert das oberste Zeichen zuerst
+  const klickbar = EBENEN.flatMap(eb => eb.cluster ? [eb.id, eb.id + '-haufen'] : [eb.id]);
+  map.on('click', e => {
+    const f = map.queryRenderedFeatures(e.point, { layers: klickbar })[0];
+    if (f?.properties.cluster) haufenOeffnen(f);
+    else if (f) oeffnen(eintragNach.get(f.properties.key), f.layer.type === 'fill' && e.lngLat);
+  });
+  for (const id of klickbar) {
+    map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
   }
   zeichnen();
 });
 
-function oeffnen(e) {
+// wo: Klickpunkt bei Flächen (sonst stünde das Popup für Russland in Moskau)
+function oeffnen(e, wo) {
   if (!e) return;
   popup?.remove();
   const t = Date.parse(e.zeit);
-  const link = /^https?:\/\//.test(e.link || '') ? `<p><a href="${esc(e.link)}" target="_blank" rel="noopener">Quelle öffnen ↗</a></p>` : '';
+  const flaeche = EBENEN.find(eb => eb.id === e.ebene)?.form === 'flaeche';
+  const link = istLink(e.link) ? `<p><a href="${esc(e.link)}" target="_blank" rel="noopener">${e.ebene === 'nachrichten' ? 'Artikel' : 'Quelle'} öffnen ↗</a></p>` : '';
   popup = new maplibregl.Popup({ maxWidth: '320px', className: 'popup' })
-    .setLngLat([e.lon, e.lat])
+    .setLngLat(wo || [e.lon, e.lat])
     .setHTML(`<h3 style="--f:${farbe(e.stufe)}">${esc(e.titel)}</h3>
-      <p class="zeit">${e.laufend ? `läuft noch, zuletzt aktualisiert ${vor(t)}` : vor(t)} · ${new Date(t).toLocaleString('de-DE')}</p>
+      <p class="zeit">${flaeche ? `Stand: ${new Date(t).toLocaleDateString('de-DE')}`
+        : `${e.laufend ? `läuft noch, zuletzt aktualisiert ${vor(t)}` : vor(t)} · ${new Date(t).toLocaleString('de-DE')}`}</p>
       ${e.text ? `<p>${esc(e.text)}</p>` : ''}
       <p class="quelle">Quelle: ${esc(e.quelle)}</p>${link}`)
+    .addTo(map);
+}
+
+// Zahlenblase: hineinzoomen, bis sie zerfällt. Liegen die Meldungen (fast) am selben Ort, hilft Zoomen nicht: dann als Liste.
+async function haufenOeffnen(f) {
+  const quelle = map.getSource(f.layer.source);
+  const id = f.properties.cluster_id;
+  const zoom = await quelle.getClusterExpansionZoom(id);
+  if (zoom <= LISTE_AB) return map.easeTo({ center: f.geometry.coordinates, zoom });
+  const liste = (await quelle.getClusterLeaves(id, 100, 0))
+    .map(b => eintragNach.get(b.properties.key)).filter(Boolean).sort((a, b) => b.t - a.t);
+  popup?.remove();
+  popup = new maplibregl.Popup({ maxWidth: '340px', className: 'popup' })
+    .setLngLat(f.geometry.coordinates)
+    .setHTML(`<h3 style="--f:${farbe(STUFEN.find(s => liste.some(e => e.stufe === s)) || 'beobachtung')}">${f.properties.point_count} Meldungen an diesem Ort</h3>
+      <ul class="haufen">${liste.map(e => `<li>${istLink(e.link)
+        ? `<a href="${esc(e.link)}" target="_blank" rel="noopener" style="--f:${farbe(e.stufe)}">${esc(e.titel)} ↗</a>`
+        : `<a style="--f:${farbe(e.stufe)}">${esc(e.titel)}</a>`}<span>${esc(e.quelle)} · ${vor(e.t)}</span></li>`).join('')}</ul>`)
     .addTo(map);
 }
 
@@ -381,6 +487,9 @@ async function laden() {
   } catch {
     status = null;
   }
+  // Ländergrenzen nur einmal laden (ändern sich nicht); klappt es nicht, beim nächsten Mal erneut
+  grenzen ||= await fetch('config/laender.geojson').then(r => r.json())
+    .then(g => Object.fromEntries(g.features.map(f => [f.properties.ADM0_A3, f.geometry]))).catch(() => null);
   eintragNach.clear();
   for (const eb of EBENEN) for (const e of daten[eb.id] || []) eintragNach.set(`${eb.id}|${e.id}`, e);
   zeichnen();
@@ -399,17 +508,29 @@ function zeichnen() {
       type: 'FeatureCollection',
       features: (an[eb.id] ? sichtbar : []).map(e => ({
         type: 'Feature',
-        geometry: { type: 'Point', coordinates: [e.lon, e.lat] },
+        // Nachrichten ohne erkannten Ort stehen nur in der Liste
+        geometry: eb.form === 'flaeche' ? grenzen?.[e.land] : e.lat != null && { type: 'Point', coordinates: [e.lon, e.lat] },
         properties: { key: `${eb.id}|${e.id}`, stufe: e.stufe, ...(e.wert != null && { wert: e.wert }) },
-      })),
+      })).filter(f => f.geometry),
     });
-    if (an[eb.id]) neueste.push(...sichtbar);
+    if (an[eb.id] && eb.liste !== false) neueste.push(...sichtbar);
   }
   neueste.sort((a, b) => b.t - a.t);
   $('neueste-zahl').textContent = neueste.length;
   $('neueste').innerHTML = neueste.slice(0, 30).map(e => `<li><button class="ereignis" style="--f:${farbe(e.stufe)}" data-key="${esc(e.ebene + '|' + e.id)}">
       ${esc(e.titel)}<span>${e.laufend ? 'läuft · ' : ''}${vor(e.t)} · ${esc(e.quelle)}</span></button></li>`).join('')
     || '<li class="leer-hinweis">Keine Ereignisse im gewählten Zeitraum.</li>';
+
+  // Live-Nachrichten: gleicher Zeitraum wie die Karte, unabhängig davon, ob die Ebene an ist
+  const meldungen = (daten.nachrichten || []).filter(m => m.t >= grenze && NACHRICHTEN_FILTER[nachrichtenFilter](m));
+  $('nachrichten-zahl').textContent = meldungen.length;
+  $('nachrichten-liste').innerHTML = meldungen.map(m => {
+    const inhalt = `${esc(m.titel)}<span>${esc(m.quelle)} · ${vor(m.t)}${m.lat == null ? ' · ohne Ort' : ''}</span>`;
+    const stil = `class="ereignis meldung" style="--f:${farbe(m.stufe)}"`;
+    // Mit Ort: Karte fliegt hin. Ohne Ort: direkt zum Artikel.
+    return `<li>${m.lat != null ? `<button ${stil} data-key="${esc('nachrichten|' + m.id)}">${inhalt}</button>`
+      : istLink(m.link) ? `<a ${stil} href="${esc(m.link)}" target="_blank" rel="noopener">${inhalt}</a>` : `<div ${stil}>${inhalt}</div>`}</li>`;
+  }).join('') || `<li class="leer-hinweis">${daten.nachrichten ? 'Keine Meldungen im gewählten Zeitraum.' : 'Keine Daten.'}</li>`;
 }
 
 function uhr() {
@@ -457,7 +578,16 @@ $('zoom-rein').onclick = () => map.zoomIn();
 $('zoom-raus').onclick = () => map.zoomOut();
 $('weltansicht').onclick = () => map.flyTo({ center: [20, 25], zoom: weltZoom() });
 
-$('neueste').addEventListener('click', ev => {
+$('nachrichten-filter').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  nachrichtenFilter = knopf.dataset.filter;
+  for (const b of knopf.parentElement.children) b.setAttribute('aria-pressed', b === knopf);
+  zeichnen();
+});
+
+// Klick auf Ereignis oder Meldung in der rechten Spalte: Karte fliegt hin und öffnet das Popup
+document.querySelector('.spalte').addEventListener('click', ev => {
   const e = eintragNach.get(ev.target.closest('.ereignis')?.dataset.key);
   if (!e) return;
   if (matchMedia('(max-width: 799px)').matches) $('karte').scrollIntoView({ behavior: 'smooth' });
