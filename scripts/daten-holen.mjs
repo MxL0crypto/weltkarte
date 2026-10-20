@@ -1,6 +1,7 @@
 // Holt alle Datenquellen und schreibt data/<ebene>.json und data/status.json.
 // Lokal starten: npm ci (einmal), dann node scripts/daten-holen.mjs
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { setTimeout as warten } from 'node:timers/promises';
 import { XMLParser } from 'fast-xml-parser';
 
 const ORDNER = new URL('../data/', import.meta.url);
@@ -23,8 +24,8 @@ const QUELLEN = [
   { name: 'Konfliktzonen (eigene Liste)', ebene: 'konfliktzonen', holen: konfliktzonen },
 ];
 
-async function abruf(url, als = 'json') {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+async function abruf(url, als = 'json', headers = {}) {
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
   // Schlüssel nie in Fehlermeldungen, die landen öffentlich in status.json
   if (!res.ok) throw new Error(`HTTP ${res.status} bei ${url.replace(/token=[^&]+/, 'token=***')}`);
   return res[als]();
@@ -376,5 +377,70 @@ console.log(`  = ${nachrichten.length} Nachrichten, davon ${nachrichten.filter(m
 const heiss = brennpunkte(nachrichten, jetzt);
 await writeFile(new URL('brennpunkte.json', ORDNER), JSON.stringify({ ebene: 'brennpunkte', aktualisiert: status.aktualisiert, eintraege: heiss }));
 melden('Brennpunkte (aus den Nachrichten)', 'brennpunkte', null, heiss.length);
+
+// ---- Märkte: eigenes Format (maerkte.json), daraus die Ebene Börsenplätze. Fällt ein Wert aus, kommt er aus der alten Datei. ----
+// shortcut: Yahoo-Endpunkt ist inoffiziell und kann ohne Vorwarnung wegfallen; dann Krypto auf CoinGecko, Devisen auf frankfurter.app umstellen.
+const yahoo = symbol => abruf(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1h`, 'json',
+  { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' });
+
+function kursAuswerten(daten) {
+  const r = daten.chart?.result?.[0];
+  const m = r?.meta;
+  if (!Number.isFinite(m?.regularMarketPrice)) throw new Error(daten.chart?.error?.description || 'kein Kurs in der Antwort');
+  // Nicht chartPreviousClose: das ist bei range=5d der Schluss vor 5 Tagen (in der Action am 20.10.2026 geprüft)
+  const aenderung = m.previousClose ? (m.regularMarketPrice / m.previousClose - 1) * 100 : m.regularMarketChangePercent;
+  return {
+    kurs: m.regularMarketPrice, waehrung: m.currency,
+    aenderungProzent: Number.isFinite(aenderung) ? Math.round(aenderung * 100) / 100 : null,
+    verlauf: (r.indicators?.quote?.[0]?.close || []).filter(Number.isFinite).slice(-48).map(x => Number(x.toPrecision(6))),
+  };
+}
+
+async function maerkteHolen() {
+  const MAERKTE = await config('maerkte.json');
+  const altMaerkte = await alteDaten('maerkte').catch(() => null);
+  const werte = [];
+  const ohneNeu = [];
+  for (const { name, symbol, gruppe } of MAERKTE) {
+    try {
+      werte.push({ name, symbol, gruppe, ...kursAuswerten(await yahoo(symbol)) });
+    } catch (e) {
+      ohneNeu.push(`${symbol}: ${e.message}`);
+      werte.push({ ...(altMaerkte?.werte?.find(w => w.symbol === symbol) || { kurs: null }), name, symbol, gruppe });
+    }
+    await warten(300); // nacheinander, nicht alle gleichzeitig
+  }
+  const maerkte = {
+    aktualisiert: ohneNeu.length < MAERKTE.length ? status.aktualisiert : altMaerkte?.aktualisiert ?? status.aktualisiert,
+    werte,
+  };
+  await writeFile(new URL('maerkte.json', ORDNER), JSON.stringify(maerkte));
+  melden('Yahoo Finance', 'maerkte', ohneNeu.length ? `${ohneNeu.length} von ${MAERKTE.length} ohne neue Daten: ${ohneNeu.slice(0, 3).join('; ')}` : null,
+    werte.filter(w => w.kurs != null).length);
+
+  // Börsenplätze: Werte mit "boerse" in config/maerkte.json, Farbe nach Tagesveränderung statt nach Stufe
+  const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  const boersen = MAERKTE.flatMap((m, i) => {
+    if (!m.boerse) return [];
+    const { kurs, aenderungProzent: a } = werte[i];
+    return [{
+      id: m.symbol, titel: `${m.boerse} · ${m.name}`,
+      text: kurs == null ? 'keine Daten' : `${zahl(kurs, 2)} Punkte` + (a == null ? '' : ` · Tagesveränderung ${a > 0 ? '▲' : a < 0 ? '▼' : ''} ${zahl(Math.abs(a), 2)} %`),
+      lat: m.lat, lon: m.lon, zeit: maerkte.aktualisiert, stufe: 'beobachtung', farbe: a > 0 ? 'plus' : a < 0 ? 'minus' : 'grau',
+      link: `https://finance.yahoo.com/quote/${encodeURIComponent(m.symbol)}`, quelle: 'Yahoo Finance',
+    }];
+  }).filter(e => gueltig(e));
+  await writeFile(new URL('boersenplaetze.json', ORDNER), JSON.stringify({ ebene: 'boersenplaetze', aktualisiert: maerkte.aktualisiert, eintraege: boersen }));
+  melden('Börsenplätze (aus den Märkten)', 'boersenplaetze', null, boersen.length);
+}
+try {
+  await maerkteHolen();
+} catch (e) { // z. B. Komma vergessen in config/maerkte.json: alte Dateien bleiben stehen, alles andere läuft weiter
+  melden('Yahoo Finance', 'maerkte', `config/maerkte.json: ${e.message}`, 0);
+  for (const ebene of ['maerkte', 'boersenplaetze']) {
+    const alt = await alteDaten(ebene).catch(() => null);
+    if (alt) await writeFile(new URL(`${ebene}.json`, ORDNER), JSON.stringify(alt));
+  }
+}
 
 await writeFile(new URL('status.json', ORDNER), JSON.stringify(status, null, 2));

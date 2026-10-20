@@ -1,6 +1,6 @@
 # Weltkarte
 
-Eine eigene Live-Weltkarte im Lagezentrum-Look: Naturereignisse, Krisen und mehr auf einer dunklen Karte, in 2D oder als Globus.
+Eine eigene Live-Weltkarte im Lagezentrum-Look: Naturereignisse, Krisen, Märkte und mehr auf einer dunklen Karte, in 2D oder als Globus.
 
 **Seite:** https://mxl0crypto.github.io/weltkarte/
 
@@ -19,6 +19,7 @@ Eine GitHub Action läuft alle 30 Minuten und holt mit `scripts/daten-holen.mjs`
 | [BBC World](https://feeds.bbci.co.uk/news/world/rss.xml), [Al Jazeera](https://www.aljazeera.com/xml/rss/all.xml), [The Guardian](https://www.theguardian.com/world/rss), [France 24](https://www.france24.com/en/rss), [DW English](https://rss.dw.com/rdf/rss-en-all), [UN News](https://news.un.org/feed/subscribe/en/news/all/rss.xml) | Nachrichten (International) | nein | alle 30 Min. |
 | [webz.io](https://webz.io) (optional) | Nachrichten aus vielen weiteren Quellen | ja, `WEBZ_API_KEY` (kostenlos, ca. 1.000 Abrufe/Monat, nur nicht-kommerziell) | alle 3 Std. |
 | eigene Auswertung der Nachrichten | Brennpunkte | nein | alle 30 Min. |
+| [Yahoo Finance](https://finance.yahoo.com) (inoffizielle Schnittstelle) | Panel Märkte (Indizes, Rohstoffe, Krypto, Devisen), Ebene Börsenplätze | nein | alle 30 Min., Kurse verzögert |
 | eigene Liste `config/konfliktzonen.json` | Konfliktzonen | nein | von Hand |
 | [Natural Earth](https://www.naturalearthdata.com/) | Ländergrenzen und Hauptstädte (`config/laender.geojson`, `config/orte.json`) | nein | einmalig |
 | [OpenFreeMap](https://openfreemap.org) / OpenMapTiles / OpenStreetMap | Grundkarte | nein | – |
@@ -55,6 +56,28 @@ Die Liste steht in `config/konfliktzonen.json`, ein Land pro Zeile:
 
 Bearbeiten wie oben: Stift, ändern, „Commit changes“. Ein falscher Ländercode zeigt sich in `data/status.json` als Fehler, die alten Konfliktzonen bleiben dann stehen.
 
+## Märkte
+
+Das Panel **Märkte** in der rechten Spalte zeigt Börsenindizes, Rohstoffe, Krypto und Wechselkurse: Kurs, Veränderung zum Vortagesschluss (grün ▲ / rot ▼) und den Verlauf der letzten ca. 48 Stunden-Werte. Die Kurse sind verzögert und keine Anlageberatung.
+
+Die Ebene **Börsenplätze** (standardmäßig aus) zeigt Frankfurt, New York, London, Tokio und Hongkong: grün = Index im Plus, rot = im Minus, grau = keine Daten. Diese Farben sind keine Warnstufen.
+
+Yahoo Finance hat keine offizielle Schnittstelle. Fällt sie weg, bleiben die letzten Kurse stehen, und in `data/status.json` steht bei „Yahoo Finance“ ein Fehler.
+
+### Wert hinzufügen oder entfernen
+
+1. Auf [finance.yahoo.com](https://finance.yahoo.com) oben den Namen suchen (z. B. „MDAX“) und das Kürzel in Klammern merken, z. B. `^MDAXI`. (Beispiele: Aktie Apple `AAPL`, Wechselkurs Euro/Polnischer Złoty `EURPLN=X`, Krypto in Euro `XRP-EUR`.)
+2. Im Repo die Datei `config/maerkte.json` öffnen und auf den Stift (Bearbeiten) klicken.
+3. Eine Zeile kopieren und anpassen, z. B.:
+   `{ "name": "MDAX", "symbol": "^MDAXI", "gruppe": "Indizes" },`
+   `gruppe` ist der Reiter im Panel (`Indizes`, `Rohstoffe`, `Krypto`, `Devisen`). Ein neuer Name ergibt einen neuen Reiter. Zwischen zwei Zeilen muss ein Komma stehen, hinter der letzten nicht.
+4. „Commit changes“ klicken. Nach ein paar Minuten ist der Wert dabei.
+
+Soll ein Index auch als Börsenplatz auf der Karte erscheinen, kommen Ort und Koordinaten dazu:
+`{ "name": "DAX", "symbol": "^GDAXI", "gruppe": "Indizes", "boerse": "Frankfurt", "lat": 50.11, "lon": 8.68 },`
+
+Zum Entfernen die ganze Zeile löschen.
+
 ### webz.io einschalten (optional)
 
 1. Auf [webz.io](https://webz.io) „Free API Key“ wählen, registrieren und den Token (Schlüssel) kopieren.
@@ -88,6 +111,14 @@ Jede Ebene ist eine Datei `data/<ebene>.json`:
 - `sprache` (optional): `de` oder `en`, bei Nachrichten.
 - Nur bei Nachrichten dürfen `lat` und `lon` fehlen (kein Ort erkannt). Diese Meldungen stehen nur in der Liste.
 - `data/nachrichten.json` hat zusätzlich `webzAbruf` (optional): Zeitpunkt des letzten webz.io-Abrufs.
+- `farbe` (optional, seit Schritt 4): eigene Farbe statt der Stufen-Farbe, `plus`, `minus` oder `grau` (Ebene Börsenplätze). `stufe` muss trotzdem gesetzt sein.
+
+Die Märkte haben ein eigenes Format, `data/maerkte.json`:
+`{ aktualisiert, werte: [{ name, symbol, gruppe, kurs, waehrung, aenderungProzent, verlauf: [...] }] }`
+
+- `kurs` ist `null`, wenn es für den Wert noch nie Daten gab. `waehrung` kann `null` sein (Yahoo liefert sie nicht für jeden Index).
+- `aenderungProzent`: Veränderung zum Vortagesschluss in Prozent (`null` = unbekannt).
+- `verlauf`: die letzten bis zu 48 Stundenkurse, älteste zuerst.
 
 `data/status.json` zeigt, welche Quelle zuletzt geklappt hat: `{ aktualisiert, quellen: [{ name, ebene, ok, anzahl, fehler }] }`
 
@@ -100,5 +131,5 @@ GitHub pausiert zeitgesteuerte Actions in öffentlichen Repos nach 60 Tagen ohne
 - [x] Schritt 1: Grundgerüst (Karte 2D/3D, Zeitfilter, Ebenen-Panel, Neueste Ereignisse, Erdbeben, GitHub Action)
 - [x] Schritt 2: Naturereignisse (Waldbrände, Stürme, Vulkane, Überschwemmungen, Katastrophen-Warnungen)
 - [x] Schritt 3: Nachrichten und Krisen (Nachrichten mit Zahlenblasen, Brennpunkte, Konfliktzonen, Panel Live-Nachrichten, webz.io optional)
-- [ ] Schritt 4: Wirtschaft
+- [x] Schritt 4: Wirtschaft (Panel Märkte mit Indizes, Rohstoffen, Krypto, Devisen und Mini-Verläufen, Ebene Börsenplätze)
 - [ ] Schritt 5: TV, Webcams, Wetter
