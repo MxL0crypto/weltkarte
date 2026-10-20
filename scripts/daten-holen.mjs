@@ -396,40 +396,51 @@ function kursAuswerten(daten) {
   };
 }
 
-const MAERKTE = await config('maerkte.json');
-const altMaerkte = await alteDaten('maerkte').catch(() => null);
-const werte = [];
-const ohneNeu = [];
-for (const { name, symbol, gruppe } of MAERKTE) {
-  try {
-    werte.push({ name, symbol, gruppe, ...kursAuswerten(await yahoo(symbol)) });
-  } catch (e) {
-    ohneNeu.push(`${symbol}: ${e.message}`);
-    werte.push({ ...(altMaerkte?.werte?.find(w => w.symbol === symbol) || { kurs: null }), name, symbol, gruppe });
+async function maerkteHolen() {
+  const MAERKTE = await config('maerkte.json');
+  const altMaerkte = await alteDaten('maerkte').catch(() => null);
+  const werte = [];
+  const ohneNeu = [];
+  for (const { name, symbol, gruppe } of MAERKTE) {
+    try {
+      werte.push({ name, symbol, gruppe, ...kursAuswerten(await yahoo(symbol)) });
+    } catch (e) {
+      ohneNeu.push(`${symbol}: ${e.message}`);
+      werte.push({ ...(altMaerkte?.werte?.find(w => w.symbol === symbol) || { kurs: null }), name, symbol, gruppe });
+    }
+    await warten(300); // nacheinander, nicht alle gleichzeitig
   }
-  await warten(300); // nacheinander, nicht alle gleichzeitig
-}
-const maerkte = {
-  aktualisiert: ohneNeu.length < MAERKTE.length ? status.aktualisiert : altMaerkte?.aktualisiert ?? status.aktualisiert,
-  werte,
-};
-await writeFile(new URL('maerkte.json', ORDNER), JSON.stringify(maerkte));
-melden('Yahoo Finance', 'maerkte', ohneNeu.length ? `${ohneNeu.length} von ${MAERKTE.length} ohne neue Daten: ${ohneNeu.slice(0, 3).join('; ')}` : null,
-  werte.filter(w => w.kurs != null).length);
+  const maerkte = {
+    aktualisiert: ohneNeu.length < MAERKTE.length ? status.aktualisiert : altMaerkte?.aktualisiert ?? status.aktualisiert,
+    werte,
+  };
+  await writeFile(new URL('maerkte.json', ORDNER), JSON.stringify(maerkte));
+  melden('Yahoo Finance', 'maerkte', ohneNeu.length ? `${ohneNeu.length} von ${MAERKTE.length} ohne neue Daten: ${ohneNeu.slice(0, 3).join('; ')}` : null,
+    werte.filter(w => w.kurs != null).length);
 
-// Börsenplätze: Werte mit "boerse" in config/maerkte.json, Farbe nach Tagesveränderung statt nach Stufe
-const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
-const boersen = MAERKTE.flatMap((m, i) => {
-  if (!m.boerse) return [];
-  const { kurs, aenderungProzent: a } = werte[i];
-  return [{
-    id: m.symbol, titel: `${m.boerse} · ${m.name}`,
-    text: kurs == null ? 'keine Daten' : `${zahl(kurs, 2)} Punkte` + (a == null ? '' : ` · Tagesveränderung ${a > 0 ? '▲' : a < 0 ? '▼' : ''} ${zahl(Math.abs(a), 2)} %`),
-    lat: m.lat, lon: m.lon, zeit: maerkte.aktualisiert, stufe: 'beobachtung', farbe: a > 0 ? 'plus' : a < 0 ? 'minus' : 'grau',
-    link: `https://finance.yahoo.com/quote/${encodeURIComponent(m.symbol)}`, quelle: 'Yahoo Finance',
-  }];
-}).filter(e => gueltig(e));
-await writeFile(new URL('boersenplaetze.json', ORDNER), JSON.stringify({ ebene: 'boersenplaetze', aktualisiert: maerkte.aktualisiert, eintraege: boersen }));
-melden('Börsenplätze (aus den Märkten)', 'boersenplaetze', null, boersen.length);
+  // Börsenplätze: Werte mit "boerse" in config/maerkte.json, Farbe nach Tagesveränderung statt nach Stufe
+  const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  const boersen = MAERKTE.flatMap((m, i) => {
+    if (!m.boerse) return [];
+    const { kurs, aenderungProzent: a } = werte[i];
+    return [{
+      id: m.symbol, titel: `${m.boerse} · ${m.name}`,
+      text: kurs == null ? 'keine Daten' : `${zahl(kurs, 2)} Punkte` + (a == null ? '' : ` · Tagesveränderung ${a > 0 ? '▲' : a < 0 ? '▼' : ''} ${zahl(Math.abs(a), 2)} %`),
+      lat: m.lat, lon: m.lon, zeit: maerkte.aktualisiert, stufe: 'beobachtung', farbe: a > 0 ? 'plus' : a < 0 ? 'minus' : 'grau',
+      link: `https://finance.yahoo.com/quote/${encodeURIComponent(m.symbol)}`, quelle: 'Yahoo Finance',
+    }];
+  }).filter(e => gueltig(e));
+  await writeFile(new URL('boersenplaetze.json', ORDNER), JSON.stringify({ ebene: 'boersenplaetze', aktualisiert: maerkte.aktualisiert, eintraege: boersen }));
+  melden('Börsenplätze (aus den Märkten)', 'boersenplaetze', null, boersen.length);
+}
+try {
+  await maerkteHolen();
+} catch (e) { // z. B. Komma vergessen in config/maerkte.json: alte Dateien bleiben stehen, alles andere läuft weiter
+  melden('Yahoo Finance', 'maerkte', `config/maerkte.json: ${e.message}`, 0);
+  for (const ebene of ['maerkte', 'boersenplaetze']) {
+    const alt = await alteDaten(ebene).catch(() => null);
+    if (alt) await writeFile(new URL(`${ebene}.json`, ORDNER), JSON.stringify(alt));
+  }
+}
 
 await writeFile(new URL('status.json', ORDNER), JSON.stringify(status, null, 2));
