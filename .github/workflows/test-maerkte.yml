@@ -1,0 +1,20 @@
+# Vorübergehend: prüft die Märkte-Abrufe in der Action, veröffentlicht nichts. Wird vor dem Merge entfernt.
+name: Test Märkte (vorübergehend)
+on:
+  push:
+    branches: [ccr-7afcbd8d-mrny8u]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/daten-holen.mjs
+      - run: cat data/maerkte.json; echo; cat data/boersenplaetze.json; echo; cat data/status.json
+      - name: Vergleich chartPreviousClose 1d/5d
+        run: for r in 1d 5d; do curl -sS -A 'Mozilla/5.0' "https://query1.finance.yahoo.com/v8/finance/chart/%5EGDAXI?range=$r&interval=1h" | head -c 1200; echo; done

@@ -1,6 +1,7 @@
 // Holt alle Datenquellen und schreibt data/<ebene>.json und data/status.json.
 // Lokal starten: npm ci (einmal), dann node scripts/daten-holen.mjs
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { setTimeout as warten } from 'node:timers/promises';
 import { XMLParser } from 'fast-xml-parser';
 
 const ORDNER = new URL('../data/', import.meta.url);
@@ -23,8 +24,8 @@ const QUELLEN = [
   { name: 'Konfliktzonen (eigene Liste)', ebene: 'konfliktzonen', holen: konfliktzonen },
 ];
 
-async function abruf(url, als = 'json') {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+async function abruf(url, als = 'json', headers = {}) {
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
   // Schlüssel nie in Fehlermeldungen, die landen öffentlich in status.json
   if (!res.ok) throw new Error(`HTTP ${res.status} bei ${url.replace(/token=[^&]+/, 'token=***')}`);
   return res[als]();
@@ -376,5 +377,74 @@ console.log(`  = ${nachrichten.length} Nachrichten, davon ${nachrichten.filter(m
 const heiss = brennpunkte(nachrichten, jetzt);
 await writeFile(new URL('brennpunkte.json', ORDNER), JSON.stringify({ ebene: 'brennpunkte', aktualisiert: status.aktualisiert, eintraege: heiss }));
 melden('Brennpunkte (aus den Nachrichten)', 'brennpunkte', null, heiss.length);
+
+// ---- Märkte: eigenes Format (maerkte.json), daraus die Ebene Börsenplätze. Fällt ein Wert aus, kommt er aus der alten Datei. ----
+// shortcut: Yahoo-Endpunkt ist inoffiziell und kann ohne Vorwarnung wegfallen; dann Krypto auf CoinGecko, Devisen auf frankfurter.app umstellen.
+const yahoo = symbol => abruf(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1h`, 'json',
+  { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' });
+
+function kursAuswerten(daten) {
+  const r = daten.chart?.result?.[0];
+  const m = r?.meta;
+  if (!Number.isFinite(m?.regularMarketPrice)) throw new Error(daten.chart?.error?.description || 'kein Kurs in der Antwort');
+  const zeiten = r.timestamp || [];
+  const schluss = r.indicators?.quote?.[0]?.close || [];
+  // Vortagesschluss = letzter Wert vor dem Handelstag des aktuellen Kurses (Ortszeit der Börse).
+  // chartPreviousClose ist bei range=5d der Schluss vor 5 Tagen, darum nur als Notnagel.
+  const tag = s => Math.floor((s + (m.gmtoffset || 0)) / 86400);
+  const i = zeiten.findLastIndex((z, j) => tag(z) < tag(m.regularMarketTime) && Number.isFinite(schluss[j]));
+  const vorher = i >= 0 ? schluss[i] : m.previousClose ?? m.chartPreviousClose;
+  return {
+    kurs: m.regularMarketPrice, waehrung: m.currency,
+    aenderungProzent: vorher ? Math.round((m.regularMarketPrice / vorher - 1) * 1e4) / 100 : null,
+    verlauf: schluss.filter(Number.isFinite).slice(-48).map(x => Number(x.toPrecision(6))),
+  };
+}
+
+// Selbsttest: Montag 99, 100, Dienstag (Lücke) 103 → +3 % zum Vortag, Verlauf ohne Lücke
+{
+  const mo = Date.UTC(2026, 9, 19, 8) / 1000;
+  const probe = kursAuswerten({ chart: { result: [{
+    meta: { regularMarketPrice: 103, regularMarketTime: mo + 90000, gmtoffset: 7200, currency: 'EUR', chartPreviousClose: 50 },
+    timestamp: [mo, mo + 3600, mo + 86400, mo + 90000], indicators: { quote: [{ close: [99, 100, null, 103] }] },
+  }] } });
+  console.assert(probe.aenderungProzent === 3 && probe.verlauf.join() === '99,100,103', 'Märkte: Vortagesschluss falsch berechnet');
+}
+
+const MAERKTE = await config('maerkte.json');
+const altMaerkte = await alteDaten('maerkte').catch(() => null);
+const werte = [];
+const ohneNeu = [];
+for (const { name, symbol, gruppe } of MAERKTE) {
+  try {
+    werte.push({ name, symbol, gruppe, ...kursAuswerten(await yahoo(symbol)) });
+  } catch (e) {
+    ohneNeu.push(`${symbol}: ${e.message}`);
+    werte.push({ ...(altMaerkte?.werte?.find(w => w.symbol === symbol) || { kurs: null }), name, symbol, gruppe });
+  }
+  await warten(300); // nacheinander, nicht alle gleichzeitig
+}
+const maerkte = {
+  aktualisiert: ohneNeu.length < MAERKTE.length ? status.aktualisiert : altMaerkte?.aktualisiert ?? status.aktualisiert,
+  werte,
+};
+await writeFile(new URL('maerkte.json', ORDNER), JSON.stringify(maerkte));
+melden('Yahoo Finance', 'maerkte', ohneNeu.length ? `${ohneNeu.length} von ${MAERKTE.length} ohne neue Daten: ${ohneNeu.slice(0, 3).join('; ')}` : null,
+  werte.filter(w => w.kurs != null).length);
+
+// Börsenplätze: Werte mit "boerse" in config/maerkte.json, Farbe nach Tagesveränderung statt nach Stufe
+const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+const boersen = MAERKTE.flatMap((m, i) => {
+  if (!m.boerse) return [];
+  const { kurs, aenderungProzent: a } = werte[i];
+  return [{
+    id: m.symbol, titel: `${m.boerse} · ${m.name}`,
+    text: kurs == null ? 'keine Daten' : `${zahl(kurs, 2)} Punkte` + (a == null ? '' : ` · Tagesveränderung ${a > 0 ? '▲' : a < 0 ? '▼' : ''} ${zahl(Math.abs(a), 2)} %`),
+    lat: m.lat, lon: m.lon, zeit: maerkte.aktualisiert, stufe: 'beobachtung', farbe: a > 0 ? 'plus' : a < 0 ? 'minus' : 'grau',
+    link: `https://finance.yahoo.com/quote/${encodeURIComponent(m.symbol)}`, quelle: 'Yahoo Finance',
+  }];
+}).filter(e => gueltig(e));
+await writeFile(new URL('boersenplaetze.json', ORDNER), JSON.stringify({ ebene: 'boersenplaetze', aktualisiert: maerkte.aktualisiert, eintraege: boersen }));
+melden('Börsenplätze (aus den Märkten)', 'boersenplaetze', null, boersen.length);
 
 await writeFile(new URL('status.json', ORDNER), JSON.stringify(status, null, 2));

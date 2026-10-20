@@ -24,6 +24,8 @@
   --erhoeht: #ff9f1c;
   --beobachtung: #ffd60a;
   --grau: #555;
+  --plus: #3ee07a;   /* Märkte: im Plus / im Minus (eigene Färbung, nicht die Stufen) */
+  --minus: #ff4545;
   --schrift: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 * { box-sizing: border-box; }
@@ -160,6 +162,20 @@ h1, h2 { margin: 0; font-size: inherit; }
 .haufen a:hover { color: var(--gruen); }
 .haufen span { display: block; padding-left: 9px; color: var(--text-schwach); font-size: 11px; }
 
+/* Märkte */
+.maerkte { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rand); }
+.wert {
+  display: grid; grid-template-columns: minmax(0, 1fr) 56px auto 68px; align-items: center; gap: 8px;
+  padding: 6px 12px; border-top: 1px solid var(--rand);
+}
+.wert:first-child { border-top: 0; }
+.wert svg { width: 56px; height: 18px; fill: none; stroke-width: 1.5; }
+.kurs, .aenderung { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kurs small { color: var(--text-schwach); font-size: 10px; }
+.plus { color: var(--plus); }
+.minus { color: var(--minus); }
+.kleingedruckt { margin: 0; padding: 6px 12px 10px; border-top: 1px solid var(--rand); color: var(--text-schwach); font-size: 10px; }
+
 /* Handy */
 @media (max-width: 799px) {
   body { height: auto; overflow: auto; }
@@ -225,6 +241,14 @@ h1, h2 { margin: 0; font-size: inherit; }
       </div>
     </section>
     <section class="panel">
+      <h2><button class="panel-kopf" aria-expanded="true" aria-controls="maerkte-inhalt">MÄRKTE</button></h2>
+      <div id="maerkte-inhalt">
+        <div class="gruppe filter" id="maerkte-reiter" role="group" aria-label="Märkte"></div>
+        <ul class="maerkte" id="maerkte-liste"></ul>
+        <p class="kleingedruckt" id="maerkte-stand"></p>
+      </div>
+    </section>
+    <section class="panel">
       <h2><button class="panel-kopf" aria-expanded="true" aria-controls="neueste">NEUESTE EREIGNISSE <span class="zahl" id="neueste-zahl"></span></button></h2>
       <ol class="neueste" id="neueste"></ol>
     </section>
@@ -278,6 +302,10 @@ const EBENEN = [
     id: 'gdacs', name: 'Katastrophen-Warnungen', datei: 'data/gdacs.json', form: 'warnung', standardAn: true, quelle: 'GDACS',
     info: 'Warnungen des Katastrophen-Warnsystems von UN und EU: Erdbeben, Tropenstürme, Überschwemmungen, Vulkane, Dürren und Waldbrände, die Menschen gefährden können. Rot = hoch, Orange = erhöht, Grün = Beobachtung. Grüne Waldbrand-Meldungen sind ausgeblendet, es sind meist über hundert.',
   },
+  {
+    id: 'boersenplaetze', name: 'Börsenplätze', datei: 'data/boersenplaetze.json', form: 'kreis', standardAn: false, liste: false, quelle: 'Yahoo Finance',
+    info: 'Die großen Börsen (Frankfurt, New York, London, Tokio, Hongkong), gefärbt nach der Tagesveränderung ihres wichtigsten Index: Grün = im Plus, Rot = im Minus, Grau = keine Daten. Diese Farben sind keine Warnstufen. Kurse sind verzögert.',
+  },
 ];
 // Zeichen im 24er-Raster (SVG-Pfade): im Ebenen-Panel als SVG, auf der Karte als Bild je Stufe.
 const FORMEN = {
@@ -297,11 +325,15 @@ const ZEITRAEUME = [['1h', 1], ['6h', 6], ['24h', 24], ['48h', 48], ['7d', 168],
 const NEU_LADEN_MIN = 5;
 const LIVE_GRENZE_MIN = 90;
 const SPEICHER = 'weltkarte-ebenen';
+const REITER_SPEICHER = 'weltkarte-maerkte-reiter';
 
 const daten = {};       // Ebenen-ID -> Einträge, oder null wenn die Datei fehlt
 const eintragNach = new Map(); // "ebene|id" -> Eintrag (für Klicks)
 let grenzen = null;     // Ländercode -> Umriss, für Ebenen mit form 'flaeche'
 let status = null;
+let maerkte = null;
+let reiter = null;
+try { reiter = localStorage.getItem(REITER_SPEICHER); } catch {}
 let stunden = 24;
 let nachrichtenFilter = 'alle';
 let popup = null;
@@ -368,7 +400,9 @@ map.on('load', () => {
     map.addImage(`${form}-${stufe}`, ctx.getImageData(0, 0, 52, 52), { pixelRatio: 2 });
   }
   const groesse = (skala, sonst) => skala ? ['case', ['has', 'wert'], ['interpolate', ['linear'], ['get', 'wert'], ...skala], sonst] : sonst;
-  const stufenFarbe = ['match', ['get', 'stufe'], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'), farbe('beobachtung')];
+  // Optionales Feld "farbe" (z. B. Börsenplätze: plus/minus/grau) geht vor der Stufe
+  const stufenFarbe = ['match', ['coalesce', ['get', 'farbe'], ['get', 'stufe']], 'hoch', farbe('hoch'), 'erhoeht', farbe('erhoeht'),
+    'plus', farbe('plus'), 'minus', farbe('minus'), 'grau', farbe('grau'), farbe('beobachtung')];
   const zaehlen = stufe => ['+', ['case', ['==', ['get', 'stufe'], stufe], 1, 0]];
   const unterNamen = map.getStyle().layers.find(l => l.type === 'symbol')?.id; // Flächen unter die Ortsnamen der Grundkarte
   for (const eb of EBENEN) {
@@ -443,7 +477,7 @@ function oeffnen(e, wo) {
   const link = istLink(e.link) ? `<p><a href="${esc(e.link)}" target="_blank" rel="noopener">${e.ebene === 'nachrichten' ? 'Artikel' : 'Quelle'} öffnen ↗</a></p>` : '';
   popup = new maplibregl.Popup({ maxWidth: '320px', className: 'popup' })
     .setLngLat(wo || [e.lon, e.lat])
-    .setHTML(`<h3 style="--f:${farbe(e.stufe)}">${esc(e.titel)}</h3>
+    .setHTML(`<h3 style="--f:${farbe(e.farbe || e.stufe)}">${esc(e.titel)}</h3>
       <p class="zeit">${flaeche ? `Stand: ${new Date(t).toLocaleDateString('de-DE')}`
         : `${e.laufend ? `läuft noch, zuletzt aktualisiert ${vor(t)}` : vor(t)} · ${new Date(t).toLocaleString('de-DE')}`}</p>
       ${e.text ? `<p>${esc(e.text)}</p>` : ''}
@@ -487,12 +521,14 @@ async function laden() {
   } catch {
     status = null;
   }
+  maerkte = await fetch(`data/maerkte.json?t=${t}`).then(r => r.ok ? r.json() : null).catch(() => null);
   // Ländergrenzen nur einmal laden (ändern sich nicht); klappt es nicht, beim nächsten Mal erneut
   grenzen ||= await fetch('config/laender.geojson').then(r => r.json())
     .then(g => Object.fromEntries(g.features.map(f => [f.properties.ADM0_A3, f.geometry]))).catch(() => null);
   eintragNach.clear();
   for (const eb of EBENEN) for (const e of daten[eb.id] || []) eintragNach.set(`${eb.id}|${e.id}`, e);
   zeichnen();
+  maerkteZeichnen();
   uhr();
 }
 
@@ -510,7 +546,7 @@ function zeichnen() {
         type: 'Feature',
         // Nachrichten ohne erkannten Ort stehen nur in der Liste
         geometry: eb.form === 'flaeche' ? grenzen?.[e.land] : e.lat != null && { type: 'Point', coordinates: [e.lon, e.lat] },
-        properties: { key: `${eb.id}|${e.id}`, stufe: e.stufe, ...(e.wert != null && { wert: e.wert }) },
+        properties: { key: `${eb.id}|${e.id}`, stufe: e.stufe, ...(e.wert != null && { wert: e.wert }), ...(e.farbe && { farbe: e.farbe }) },
       })).filter(f => f.geometry),
     });
     if (an[eb.id] && eb.liste !== false) neueste.push(...sichtbar);
@@ -531,6 +567,34 @@ function zeichnen() {
     return `<li>${m.lat != null ? `<button ${stil} data-key="${esc('nachrichten|' + m.id)}">${inhalt}</button>`
       : istLink(m.link) ? `<a ${stil} href="${esc(m.link)}" target="_blank" rel="noopener">${inhalt}</a>` : `<div ${stil}>${inhalt}</div>`}</li>`;
   }).join('') || `<li class="leer-hinweis">${daten.nachrichten ? 'Keine Meldungen im gewählten Zeitraum.' : 'Keine Daten.'}</li>`;
+}
+
+// ---- Märkte ----
+const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+
+// Mini-Verlauf als Linie, Höhe auf Minimum bis Maximum gestreckt
+function verlaufSvg(werte, f) {
+  if (!(werte?.length >= 2)) return '<span></span>';
+  const min = Math.min(...werte), spanne = Math.max(...werte) - min || 1;
+  const punkte = werte.map((w, i) => `${(i / (werte.length - 1) * 56).toFixed(1)},${(17 - (w - min) / spanne * 16).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 56 18" aria-hidden="true"><polyline points="${punkte}" stroke="${f}"/></svg>`;
+}
+
+function maerkteZeichnen() {
+  const werte = maerkte?.werte || [];
+  const gruppen = [...new Set(werte.map(w => w.gruppe))];
+  if (!gruppen.includes(reiter)) reiter = gruppen[0];
+  $('maerkte-reiter').innerHTML = gruppen.map(g => `<button data-reiter="${esc(g)}" aria-pressed="${g === reiter}">${esc(g)}</button>`).join('');
+  $('maerkte-liste').innerHTML = werte.filter(w => w.gruppe === reiter && w.kurs != null).map(w => {
+    const a = w.aenderungProzent;
+    const art = a > 0 ? 'plus' : a < 0 ? 'minus' : 'grau';
+    return `<li class="wert"><span>${esc(w.name)}</span>${verlaufSvg(w.verlauf, farbe(art))}
+      <span class="kurs">${zahl(w.kurs, w.kurs < 10 ? 4 : 2)} <small>${esc(w.waehrung)}</small></span>
+      <span class="aenderung ${art}">${a == null ? '–' : `${a > 0 ? '▲' : a < 0 ? '▼' : ''} ${zahl(Math.abs(a), 2)} %`}</span></li>`;
+  }).join('') || '<li class="leer-hinweis">Keine Daten.</li>';
+  const stand = Date.parse(maerkte?.aktualisiert);
+  $('maerkte-stand').textContent = `Kurse verzögert${stand ? `, Stand ${new Date(stand).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}`
+    + ' · Quelle: Yahoo Finance · keine Anlageberatung';
 }
 
 function uhr() {
@@ -584,6 +648,14 @@ $('nachrichten-filter').addEventListener('click', e => {
   nachrichtenFilter = knopf.dataset.filter;
   for (const b of knopf.parentElement.children) b.setAttribute('aria-pressed', b === knopf);
   zeichnen();
+});
+
+$('maerkte-reiter').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  reiter = knopf.dataset.reiter;
+  try { localStorage.setItem(REITER_SPEICHER, reiter); } catch {}
+  maerkteZeichnen();
 });
 
 // Klick auf Ereignis oder Meldung in der rechten Spalte: Karte fliegt hin und öffnet das Popup
