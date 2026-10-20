@@ -16,5 +16,14 @@ jobs:
       - run: npm ci
       - run: node scripts/daten-holen.mjs
       - run: cat data/maerkte.json; echo; cat data/boersenplaetze.json; echo; cat data/status.json
-      - name: Vergleich chartPreviousClose 1d/5d
-        run: for r in 1d 5d; do curl -sS -A 'Mozilla/5.0' "https://query1.finance.yahoo.com/v8/finance/chart/%5EGDAXI?range=$r&interval=1h" | head -c 1200; echo; done
+      - name: Vergleich mit Yahoos eigenen Werten
+        run: |
+          node --input-type=module -e "
+          import { readFileSync } from 'node:fs';
+          const unsere = JSON.parse(readFileSync('data/maerkte.json')).werte;
+          for (const w of unsere) {
+            const d = await (await fetch('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(w.symbol) + '?range=5d&interval=1h', { headers: { 'User-Agent': 'Mozilla/5.0' } })).json();
+            const m = d.chart.result[0].meta;
+            console.log(w.symbol.padEnd(10), 'unsere', String(w.aenderungProzent).padEnd(6), 'yahoo', String(m.regularMarketChangePercent).padEnd(8), 'previousClose', m.previousClose, 'aus previousClose', m.previousClose && (Math.round((m.regularMarketPrice / m.previousClose - 1) * 1e4) / 100), m.instrumentType);
+            await new Promise(r => setTimeout(r, 300));
+          }"
