@@ -387,28 +387,13 @@ function kursAuswerten(daten) {
   const r = daten.chart?.result?.[0];
   const m = r?.meta;
   if (!Number.isFinite(m?.regularMarketPrice)) throw new Error(daten.chart?.error?.description || 'kein Kurs in der Antwort');
-  const zeiten = r.timestamp || [];
-  const schluss = r.indicators?.quote?.[0]?.close || [];
-  // Vortagesschluss = letzter Wert vor dem Handelstag des aktuellen Kurses (Ortszeit der Börse).
-  // chartPreviousClose ist bei range=5d der Schluss vor 5 Tagen, darum nur als Notnagel.
-  const tag = s => Math.floor((s + (m.gmtoffset || 0)) / 86400);
-  const i = zeiten.findLastIndex((z, j) => tag(z) < tag(m.regularMarketTime) && Number.isFinite(schluss[j]));
-  const vorher = i >= 0 ? schluss[i] : m.previousClose ?? m.chartPreviousClose;
+  // Nicht chartPreviousClose: das ist bei range=5d der Schluss vor 5 Tagen (in der Action am 20.10.2026 geprüft)
+  const aenderung = m.previousClose ? (m.regularMarketPrice / m.previousClose - 1) * 100 : m.regularMarketChangePercent;
   return {
     kurs: m.regularMarketPrice, waehrung: m.currency,
-    aenderungProzent: vorher ? Math.round((m.regularMarketPrice / vorher - 1) * 1e4) / 100 : null,
-    verlauf: schluss.filter(Number.isFinite).slice(-48).map(x => Number(x.toPrecision(6))),
+    aenderungProzent: Number.isFinite(aenderung) ? Math.round(aenderung * 100) / 100 : null,
+    verlauf: (r.indicators?.quote?.[0]?.close || []).filter(Number.isFinite).slice(-48).map(x => Number(x.toPrecision(6))),
   };
-}
-
-// Selbsttest: Montag 99, 100, Dienstag (Lücke) 103 → +3 % zum Vortag, Verlauf ohne Lücke
-{
-  const mo = Date.UTC(2026, 9, 19, 8) / 1000;
-  const probe = kursAuswerten({ chart: { result: [{
-    meta: { regularMarketPrice: 103, regularMarketTime: mo + 90000, gmtoffset: 7200, currency: 'EUR', chartPreviousClose: 50 },
-    timestamp: [mo, mo + 3600, mo + 86400, mo + 90000], indicators: { quote: [{ close: [99, 100, null, 103] }] },
-  }] } });
-  console.assert(probe.aenderungProzent === 3 && probe.verlauf.join() === '99,100,103', 'Märkte: Vortagesschluss falsch berechnet');
 }
 
 const MAERKTE = await config('maerkte.json');
