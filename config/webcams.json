@@ -1,0 +1,16 @@
+[
+  { "name": "Klagemauer", "ort": "Jerusalem", "land": "Israel", "region": "Nahost", "lat": 31.78, "lon": 35.23, "videoId": "" },
+  { "name": "Kaaba", "ort": "Mekka", "land": "Saudi-Arabien", "region": "Nahost", "lat": 21.42, "lon": 39.83, "videoId": "" },
+  { "name": "Dubai Marina", "ort": "Dubai", "land": "Vereinigte Arabische Emirate", "region": "Nahost", "lat": 25.08, "lon": 55.14, "videoId": "" },
+  { "name": "Canal Grande", "ort": "Venedig", "land": "Italien", "region": "Europa", "lat": 45.44, "lon": 12.33, "videoId": "" },
+  { "name": "Hafen Hamburg", "ort": "Hamburg", "land": "Deutschland", "region": "Europa", "lat": 53.54, "lon": 9.97, "videoId": "" },
+  { "name": "Times Square", "ort": "New York", "land": "USA", "region": "Amerika", "lat": 40.76, "lon": -73.99, "videoId": "" },
+  { "name": "Niagarafälle", "ort": "Niagara Falls", "land": "Kanada", "region": "Amerika", "lat": 43.08, "lon": -79.07, "videoId": "" },
+  { "name": "Copacabana", "ort": "Rio de Janeiro", "land": "Brasilien", "region": "Amerika", "lat": -22.97, "lon": -43.18, "videoId": "" },
+  { "name": "Shibuya-Kreuzung", "ort": "Tokio", "land": "Japan", "region": "Asien", "lat": 35.66, "lon": 139.70, "videoId": "" },
+  { "name": "Skyline", "ort": "Taipeh", "land": "Taiwan", "region": "Asien", "lat": 25.03, "lon": 121.56, "videoId": "" },
+  { "name": "Victoria Harbour", "ort": "Hongkong", "land": "China", "region": "Asien", "lat": 22.29, "lon": 114.17, "videoId": "" },
+  { "name": "Tafelberg", "ort": "Kapstadt", "land": "Südafrika", "region": "Afrika", "lat": -33.96, "lon": 18.41, "videoId": "" },
+  { "name": "Hafen von Sydney", "ort": "Sydney", "land": "Australien", "region": "Ozeanien", "lat": -33.86, "lon": 151.21, "videoId": "" },
+  { "name": "Internationale Raumstation", "ort": "Erdumlaufbahn", "land": "ISS", "region": "Weltraum", "videoId": "" }
+]

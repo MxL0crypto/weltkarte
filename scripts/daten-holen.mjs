@@ -22,6 +22,8 @@ const QUELLEN = [
   { name: 'NASA EONET Überschwemmungen', ebene: 'ueberschwemmungen', holen: eonet('floods') },
   { name: 'GDACS Katastrophen-Warnungen', ebene: 'gdacs', holen: gdacs },
   { name: 'Konfliktzonen (eigene Liste)', ebene: 'konfliktzonen', holen: konfliktzonen },
+  { name: 'Open-Meteo Temperaturen', ebene: 'temperaturen', holen: temperaturen },
+  { name: 'Webcams (eigene Liste)', ebene: 'webcams', holen: webcams, ohneOrt: true },
 ];
 
 async function abruf(url, als = 'json', headers = {}) {
@@ -118,8 +120,54 @@ async function konfliktzonen() {
   });
 }
 
+// WMO-Wettercodes (Open-Meteo) auf Deutsch
+const WETTER = {
+  0: 'Klar', 1: 'Überwiegend klar', 2: 'Teils bewölkt', 3: 'Bedeckt', 45: 'Nebel', 48: 'Reifnebel',
+  51: 'Leichter Nieselregen', 53: 'Nieselregen', 55: 'Starker Nieselregen', 56: 'Gefrierender Nieselregen', 57: 'Starker gefrierender Nieselregen',
+  61: 'Leichter Regen', 63: 'Regen', 65: 'Starker Regen', 66: 'Gefrierender Regen', 67: 'Starker gefrierender Regen',
+  71: 'Leichter Schneefall', 73: 'Schneefall', 75: 'Starker Schneefall', 77: 'Schneegriesel',
+  80: 'Leichte Regenschauer', 81: 'Regenschauer', 82: 'Heftige Regenschauer', 85: 'Leichte Schneeschauer', 86: 'Schneeschauer',
+  95: 'Gewitter', 96: 'Gewitter mit Hagel', 99: 'Gewitter mit starkem Hagel',
+};
+
+// Ein Abruf für alle Städte mit "wetter": true in config/orte.json
+async function temperaturen() {
+  const orte = ORTE.orte.filter(o => o.wetter);
+  if (!orte.length) throw new Error('Kein Ort in config/orte.json mit "wetter": true');
+  const antworten = [].concat(await abruf('https://api.open-meteo.com/v1/forecast'
+    + `?latitude=${orte.map(o => o.lat)}&longitude=${orte.map(o => o.lon)}&current=temperature_2m,weather_code,wind_speed_10m`)); // bei nur einem Ort kein Array
+  return orte.flatMap((o, i) => {
+    const c = antworten[i]?.current;
+    if (!Number.isFinite(c?.temperature_2m)) return []; // ein fehlender Ort soll die anderen nicht mitreißen
+    return [{
+      id: o.name, titel: `${o.name}: ${Math.round(c.temperature_2m)}°`,
+      text: `${WETTER[c.weather_code] ?? `Wettercode ${c.weather_code}`}, Wind ${Math.round(c.wind_speed_10m)} km/h`,
+      lat: o.lat, lon: o.lon, zeit: new Date(jetzt).toISOString(), stufe: 'beobachtung', // Stufe ist hier ohne Bedeutung
+      wert: c.temperature_2m, link: 'https://open-meteo.com/', quelle: 'Open-Meteo',
+    }];
+  });
+}
+
+// Webcams aus config/webcams.json. Weltraum-Kameras haben keinen Ort (nur im Panel, nicht auf der Karte).
+async function webcams() {
+  return (await config('webcams.json')).map((w, i) => {
+    const wo = `config/webcams.json, Eintrag ${i + 1} (${w.name || 'ohne Namen'})`;
+    for (const f of ['name', 'ort', 'land', 'region']) if (!w[f]) throw new Error(`${wo}: "${f}" fehlt`);
+    if (w.videoId && !/^[\w-]{11}$/.test(w.videoId)) throw new Error(`${wo}: videoId muss genau die 11 Zeichen nach "v=" sein`);
+    if (w.kanalId && !/^UC[\w-]{22}$/.test(w.kanalId)) throw new Error(`${wo}: kanalId muss mit UC beginnen und 24 Zeichen lang sein`);
+    return {
+      id: `cam-${i}`, titel: w.name, text: `${w.ort}, ${w.land}`, // "land" ist in den Daten der Ländercode, darum nur im Text
+      ...(Number.isFinite(w.lat) && Number.isFinite(w.lon) && { lat: w.lat, lon: w.lon }),
+      zeit: new Date(jetzt).toISOString(), stufe: 'beobachtung', laufend: true, region: w.region,
+      ...(w.videoId && { videoId: w.videoId }), ...(w.kanalId && { kanalId: w.kanalId }),
+      link: w.videoId ? `https://www.youtube.com/watch?v=${w.videoId}` : w.kanalId ? `https://www.youtube.com/channel/${w.kanalId}/live` : undefined,
+      quelle: 'eigene Liste (YouTube)',
+    };
+  });
+}
+
 // Gemeinsames Datenformat prüfen: kaputte Einträge fliegen raus, statt die Karte zu stören.
-// ohneOrt: Nachrichten ohne erkannten Ort dürfen lat/lon weglassen (nur Liste, nicht Karte).
+// ohneOrt: Nachrichten ohne erkannten Ort und Webcams im Weltraum dürfen lat/lon weglassen (nur Liste, nicht Karte).
 function gueltig(e, ohneOrt = false) {
   return e && e.id && e.titel && (Number.isFinite(e.lat) && Number.isFinite(e.lon) || ohneOrt && e.lat == null && e.lon == null)
     && !Number.isNaN(Date.parse(e.zeit)) && STUFEN.includes(e.stufe);
@@ -328,7 +376,7 @@ for (const q of QUELLEN) {
   }
   if (datei) {
     // Laufende Ereignisse (z. B. Vulkane) dürfen älter als 7 Tage sein.
-    datei.eintraege = (datei.eintraege || []).filter(e => gueltig(e) && (e.laufend || jetzt - Date.parse(e.zeit) <= SIEBEN_TAGE));
+    datei.eintraege = (datei.eintraege || []).filter(e => gueltig(e, q.ohneOrt) && (e.laufend || jetzt - Date.parse(e.zeit) <= SIEBEN_TAGE));
     await writeFile(new URL(`${q.ebene}.json`, ORDNER), JSON.stringify(datei));
   }
   melden(q.name, q.ebene, fehler, datei?.eintraege.length ?? 0);
