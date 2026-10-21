@@ -4,7 +4,7 @@
   { "name": "Dubai Marina", "ort": "Dubai", "land": "Vereinigte Arabische Emirate", "region": "Nahost", "lat": 25.08, "lon": 55.14, "videoId": "" },
   { "name": "Canal Grande", "ort": "Venedig", "land": "Italien", "region": "Europa", "lat": 45.44, "lon": 12.33, "videoId": "" },
   { "name": "Hafen Hamburg", "ort": "Hamburg", "land": "Deutschland", "region": "Europa", "lat": 53.54, "lon": 9.97, "videoId": "" },
-  { "name": "Times Square", "ort": "New York", "land": "USA", "region": "Amerika", "lat": 40.76, "lon": -73.99, "videoId": "" },
+  { "name": "Times Square", "ort": "New York", "land": "USA", "region": "Amerika", "lat": 40.76, "lon": -73.99, "videoId": "VGnFLdQW39A" },
   { "name": "Niagarafälle", "ort": "Niagara Falls", "land": "Kanada", "region": "Amerika", "lat": 43.08, "lon": -79.07, "videoId": "" },
   { "name": "Copacabana", "ort": "Rio de Janeiro", "land": "Brasilien", "region": "Amerika", "lat": -22.97, "lon": -43.18, "videoId": "" },
   { "name": "Shibuya-Kreuzung", "ort": "Tokio", "land": "Japan", "region": "Asien", "lat": 35.66, "lon": 139.70, "videoId": "" },
