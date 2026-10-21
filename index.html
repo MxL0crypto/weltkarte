@@ -26,9 +26,12 @@
   --grau: #555;
   --plus: #3ee07a;   /* Märkte: im Plus / im Minus (eigene Färbung, nicht die Stufen) */
   --minus: #ff4545;
+  --kamera: #4db8ff; /* Webcams */
+  --kalt: #5b8cff; --kuehl: #4dd0e1; --mild: #8be04e; --warm: #ffb020; --heiss: #ff4545; /* Temperaturen: blau = kalt bis rot = heiß */
   --schrift: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column; overflow: hidden;
@@ -176,6 +179,30 @@ h1, h2 { margin: 0; font-size: inherit; }
 .minus { color: var(--minus); }
 .kleingedruckt { margin: 0; padding: 6px 12px 10px; border-top: 1px solid var(--rand); color: var(--text-schwach); font-size: 10px; }
 
+/* Player (Live-TV und Webcams): 16:9-Fläche, davor der Abspielen-Knopf */
+.chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 10px; }
+.chips button, .player-leiste button, .stopp { padding: 5px 9px; border: 1px solid var(--rand); background: var(--panel); color: var(--text-schwach); }
+.chips button:hover, .player-leiste button:hover, .stopp:hover { color: var(--text); background: var(--panel-hell); }
+.chips button[aria-pressed="true"] { border-color: var(--gruen); color: var(--gruen); }
+.player { position: relative; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; background: #000; text-align: center; }
+.player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.player p { margin: 0; padding: 6px; color: var(--text-schwach); font-size: 11px; }
+.player a { color: var(--gruen); }
+.abspielen { padding: 7px 12px; border: 1px solid var(--gruen); background: rgba(0,0,0,.6); color: var(--gruen); font-weight: 600; }
+.abspielen:hover { background: var(--gruen); color: #04140a; }
+.player-leiste { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px 10px; }
+#tv-player { margin: 0 12px; }
+.cams { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 8px; padding: 0 12px 12px; }
+.cams.einzeln { grid-template-columns: 1fr; }
+.cams .leer-hinweis { grid-column: 1 / -1; padding: 0; }
+.cam { min-width: 0; }
+.cam-zeile { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; padding-top: 4px; }
+.cam-zeile span { min-width: 0; }
+.cam-zeile b, .cam-zeile small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-zeile small { color: var(--text-schwach); font-size: 10px; }
+.stopp { padding: 5px 8px; font-size: 11px; }
+#cams-ansicht { margin-top: -2px; }
+
 /* Handy */
 @media (max-width: 799px) {
   body { height: auto; overflow: auto; }
@@ -249,6 +276,31 @@ h1, h2 { margin: 0; font-size: inherit; }
       </div>
     </section>
     <section class="panel">
+      <h2><button class="panel-kopf" aria-expanded="true" aria-controls="tv-inhalt">LIVE-TV</button></h2>
+      <div id="tv-inhalt">
+        <div class="chips" id="tv-sender" role="group" aria-label="Sender"></div>
+        <div class="player" id="tv-player"></div>
+        <div class="player-leiste" id="tv-leiste" hidden>
+          <button id="tv-ton">Ton an</button>
+          <button id="tv-vollbild">Vollbild</button>
+          <button id="tv-stopp">Stopp</button>
+        </div>
+        <p class="kleingedruckt">YouTube-Livestreams der Sender. Geladen wird erst nach einem Klick auf „Live abspielen“.</p>
+      </div>
+    </section>
+    <section class="panel">
+      <h2><button class="panel-kopf" aria-expanded="true" aria-controls="cams-inhalt">LIVE-WEBCAMS</button></h2>
+      <div id="cams-inhalt">
+        <div class="chips" id="cams-region" role="group" aria-label="Region"></div>
+        <div class="gruppe filter" id="cams-ansicht" role="group" aria-label="Ansicht">
+          <button data-ansicht="raster" aria-pressed="true">Raster</button>
+          <button data-ansicht="einzeln" aria-pressed="false">Einzeln</button>
+        </div>
+        <div class="cams" id="cams-liste"></div>
+        <p class="kleingedruckt">YouTube-Livestreams. Es laufen höchstens 4 gleichzeitig, die älteste stoppt zuerst.</p>
+      </div>
+    </section>
+    <section class="panel">
       <h2><button class="panel-kopf" aria-expanded="true" aria-controls="neueste">NEUESTE EREIGNISSE <span class="zahl" id="neueste-zahl"></span></button></h2>
       <ol class="neueste" id="neueste"></ol>
     </section>
@@ -259,6 +311,7 @@ h1, h2 { margin: 0; font-size: inherit; }
 // Alle Ebenen der Karte. Neue Ebene = neuer Eintrag hier (+ Quelle im Daten-Skript).
 // form: Zeichen aus FORMEN ('flaeche' = Länder einfärben über das Feld "land"). skala: Größe nach "wert" (Paare wert, Größe).
 // deckkraft: für große, durchsichtige Kreise. cluster: nahe Punkte zu Zahlenblasen. liste: false = nicht in "Neueste Ereignisse".
+// farbe: feste Farbe (CSS-Variable) für alle Zeichen der Ebene statt der Stufen-Farben. raster: Bilder-Ebene ohne Daten-Datei (Regenradar).
 // Spätere Ebenen liegen oben.
 const EBENEN = [
   {
@@ -306,6 +359,18 @@ const EBENEN = [
     id: 'boersenplaetze', name: 'Börsenplätze', datei: 'data/boersenplaetze.json', form: 'kreis', standardAn: false, liste: false, quelle: 'Yahoo Finance',
     info: 'Die großen Börsen (Frankfurt, New York, London, Tokio, Hongkong), gefärbt nach der Tagesveränderung ihres wichtigsten Index: Grün = im Plus, Rot = im Minus, Grau = keine Daten. Diese Farben sind keine Warnstufen. Kurse sind verzögert.',
   },
+  {
+    id: 'radar', name: 'Regenradar', raster: true, form: 'radar', standardAn: false, liste: false, quelle: 'RainViewer',
+    info: 'Aktuelles Regenradar, halbdurchsichtig über der Karte; je kräftiger die Farbe, desto stärker der Regen. Das Bild ist höchstens ca. 10 Minuten alt. Radar gibt es nur dort, wo es Wetterradar gibt, vor allem in Europa, Nordamerika und Teilen von Asien und Ozeanien; anderswo bleibt die Karte leer. Weather data by Rain Viewer (rainviewer.com).',
+  },
+  {
+    id: 'temperaturen', name: 'Temperaturen', datei: 'data/temperaturen.json', form: 'temperatur', standardAn: false, liste: false, quelle: 'Open-Meteo',
+    info: 'Aktuelle Temperatur in großen Städten auf allen Kontinenten, gefärbt von blau (kalt) bis rot (heiß). Wetterlage und Wind stehen im Popup. Die Werte kommen aus dem Wettermodell von Open-Meteo, nicht von einer Messstation vor Ort.',
+  },
+  {
+    id: 'webcams', name: 'Webcams', datei: 'data/webcams.json', form: 'kamera', farbe: 'kamera', standardAn: false, liste: false, quelle: 'YouTube-Livestreams',
+    info: 'Orte mit einem Livestream. Ein Klick öffnet die Webcam im Panel „Live-Webcams“ in der rechten Spalte und startet sie stumm. Webcams ohne Video-ID in config/webcams.json starten nicht.',
+  },
 ];
 // Zeichen im 24er-Raster (SVG-Pfade): im Ebenen-Panel als SVG, auf der Karte als Bild je Stufe.
 const FORMEN = {
@@ -317,15 +382,23 @@ const FORMEN = {
   warnung: 'M12 1.5 23 21.5H1zM11 8.5v7h2v-7zM11 17v2.5h2V17z', // gegenläufige Teilpfade (Auge, Ausrufezeichen) = Loch
   meldung: 'M2.5 3.5h19v13H10l-5 4.5v-4.5H2.5z',
   flaeche: 'M2 5.5 8.5 3l7 2.5L22 3v15.5L15.5 21l-7-2.5L2 21z',
+  kamera: 'M3 6.5h4l1.5-2.5h7L17 6.5h4v13H3zM12 9.8a3.2 3.2 0 1 0 0 6.4a3.2 3.2 0 1 0 0-6.4z', // Linse = Loch
+  temperatur: 'M10 3.5a2 2 0 0 1 4 0V13.2a4.5 4.5 0 1 1-4 0z',
+  radar: 'M7 18.5a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18.2 9.6A4.5 4.5 0 0 1 17.5 18.5z',
 };
 const CLUSTER_BIS = 16; // bis zu diesem Zoom fassen Nachrichten-Ebenen nahe Punkte zusammen
 const LISTE_AB = 7;     // müsste man für eine Zahlenblase weiter hineinzoomen, zeigt der Klick gleich die Liste (Orte sind nur stadtgenau)
 const STUFEN = ['hoch', 'erhoeht', 'beobachtung'];
+const FARBNAMEN = [...STUFEN, ...EBENEN.flatMap(e => e.farbe ?? [])]; // Farben, in denen Zeichen-Bilder gebraucht werden
 const ZEITRAEUME = [['1h', 1], ['6h', 6], ['24h', 24], ['48h', 48], ['7d', 168], ['Alle', Infinity]];
 const NEU_LADEN_MIN = 5;
 const LIVE_GRENZE_MIN = 90;
 const SPEICHER = 'weltkarte-ebenen';
 const REITER_SPEICHER = 'weltkarte-maerkte-reiter';
+const SENDER_SPEICHER = 'weltkarte-tv-sender';
+const RADAR_MIN = 10;   // RainViewer liefert alle 10 Minuten ein neues Bild
+const CAMS_MAX = 4;     // so viele Webcams laufen höchstens gleichzeitig (in der Einzelansicht 1)
+const REGIONEN = ['Nahost', 'Europa', 'Amerika', 'Asien', 'Afrika', 'Ozeanien', 'Weltraum']; // Reihenfolge der Filter, andere Namen kommen dahinter
 
 const daten = {};       // Ebenen-ID -> Einträge, oder null wenn die Datei fehlt
 const eintragNach = new Map(); // "ebene|id" -> Eintrag (für Klicks)
@@ -365,6 +438,7 @@ function vor(ms) {
 
 // ---- Karte ----
 let projektion = 'mercator';
+let bereit = false; // true, sobald die Grundkarte geladen ist und alle Ebenen angelegt sind
 // Zoom, bei dem die ganze Welt passt. Der Globus braucht mehr, sonst ist er winzig.
 function weltZoom() {
   const k = $('karte');
@@ -377,7 +451,8 @@ const map = new maplibregl.Map({
   style: 'https://tiles.openfreemap.org/styles/dark',
   center: [20, 25],
   zoom: weltZoom(),
-  attributionControl: { customAttribution: [...new Set(EBENEN.map(e => e.quelle))].join(', ') },
+  // Das Regenradar nennt sich selbst (mit Link), sobald es auf der Karte liegt
+  attributionControl: { customAttribution: [...new Set(EBENEN.filter(e => !e.raster).map(e => e.quelle))].join(', ') },
   locale: { 'Popup.Close': 'Schließen', 'AttributionControl.ToggleAttribution': 'Quellenangaben ein/aus' },
 });
 
@@ -389,8 +464,8 @@ map.on('load', () => {
       map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:de'], ['get', 'name:latin'], ['get', 'name']]);
     }
   }
-  // Jede Form einmal pro Stufe als Bild, doppelt aufgelöst, mit dunklem Rand wie bei den Kreisen
-  for (const [form, pfad] of Object.entries(FORMEN)) for (const stufe of STUFEN) {
+  // Jede Form einmal pro Stufe (und pro feste Ebenen-Farbe) als Bild, doppelt aufgelöst, mit dunklem Rand wie bei den Kreisen
+  for (const [form, pfad] of Object.entries(FORMEN)) for (const stufe of FARBNAMEN) {
     const ctx = Object.assign(document.createElement('canvas'), { width: 52, height: 52 }).getContext('2d');
     ctx.setTransform(2, 0, 0, 2, 2, 2);
     const p = new Path2D(pfad);
@@ -405,7 +480,11 @@ map.on('load', () => {
     'plus', farbe('plus'), 'minus', farbe('minus'), 'grau', farbe('grau'), farbe('beobachtung')];
   const zaehlen = stufe => ['+', ['case', ['==', ['get', 'stufe'], stufe], 1, 0]];
   const unterNamen = map.getStyle().layers.find(l => l.type === 'symbol')?.id; // Flächen unter die Ortsnamen der Grundkarte
+  // Temperaturen: Farbe stufenlos nach Wert, von blau (kalt) bis rot (heiß)
+  const temperaturFarbe = ['interpolate', ['linear'], ['get', 'wert'],
+    -10, farbe('kalt'), 5, farbe('kuehl'), 15, farbe('mild'), 27, farbe('warm'), 38, farbe('heiss')];
   for (const eb of EBENEN) {
+    if (eb.raster) continue; // Quelle und Ebene des Regenradars entstehen erst, wenn RainViewer geantwortet hat (radarZeichnen)
     map.addSource(eb.id, {
       type: 'geojson', data: { type: 'FeatureCollection', features: [] },
       ...(eb.cluster && { cluster: true, clusterRadius: 40, clusterMaxZoom: CLUSTER_BIS, clusterProperties: { hoch: zaehlen('hoch'), erhoeht: zaehlen('erhoeht') } }),
@@ -414,6 +493,12 @@ map.on('load', () => {
     if (eb.form === 'flaeche') {
       map.addLayer({ id: eb.id, type: 'fill', source: eb.id, paint: { 'fill-color': stufenFarbe, 'fill-opacity': 0.25 } }, unterNamen);
       map.addLayer({ id: eb.id + '-rand', type: 'line', source: eb.id, paint: { 'line-color': stufenFarbe, 'line-opacity': 0.6, 'line-width': 1 } }, unterNamen);
+    } else if (eb.form === 'temperatur') {
+      map.addLayer({
+        id: eb.id, type: 'symbol', source: eb.id,
+        layout: { 'text-field': ['concat', ['to-string', ['round', ['get', 'wert']]], '°'], 'text-font': ['Noto Sans Bold'], 'text-size': 13 },
+        paint: { 'text-color': temperaturFarbe, 'text-halo-color': 'rgba(0,0,0,.85)', 'text-halo-width': 1.5 },
+      });
     } else map.addLayer(eb.form === 'kreis' ? {
       id: eb.id, type: 'circle', source: eb.id, ...nurEinzelne,
       paint: {
@@ -428,7 +513,7 @@ map.on('load', () => {
       id: eb.id, type: 'symbol', source: eb.id, ...nurEinzelne,
       paint: { 'icon-opacity': 0.9 },
       layout: {
-        'icon-image': ['concat', eb.form, '-', ['get', 'stufe']],
+        'icon-image': eb.farbe ? `${eb.form}-${eb.farbe}` : ['concat', eb.form, '-', ['get', 'stufe']],
         'icon-size': groesse(eb.skala, 0.7),
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
@@ -455,7 +540,7 @@ map.on('load', () => {
     }
   }
   // Ein Klick-Handler für alle Ebenen: queryRenderedFeatures liefert das oberste Zeichen zuerst
-  const klickbar = EBENEN.flatMap(eb => eb.cluster ? [eb.id, eb.id + '-haufen'] : [eb.id]);
+  const klickbar = EBENEN.filter(eb => !eb.raster).flatMap(eb => eb.cluster ? [eb.id, eb.id + '-haufen'] : [eb.id]);
   map.on('click', e => {
     const f = map.queryRenderedFeatures(e.point, { layers: klickbar })[0];
     if (f?.properties.cluster) haufenOeffnen(f);
@@ -465,12 +550,14 @@ map.on('load', () => {
     map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer');
     map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
   }
+  bereit = true;
   zeichnen();
 });
 
 // wo: Klickpunkt bei Flächen (sonst stünde das Popup für Russland in Moskau)
 function oeffnen(e, wo) {
   if (!e) return;
+  if (e.ebene === 'webcams') return webcamOeffnen(e.id); // Webcams öffnen sich im Panel, nicht als Popup
   popup?.remove();
   const t = Date.parse(e.zeit);
   const flaeche = EBENEN.find(eb => eb.id === e.ebene)?.form === 'flaeche';
@@ -507,6 +594,7 @@ async function haufenOeffnen(f) {
 async function laden() {
   const t = Date.now(); // ?t= umgeht Browser- und GitHub-Cache
   await Promise.all(EBENEN.map(async eb => {
+    if (eb.raster) return;
     try {
       const res = await fetch(`${eb.datei}?t=${t}`);
       if (!res.ok) throw new Error(res.status);
@@ -529,6 +617,7 @@ async function laden() {
   for (const eb of EBENEN) for (const e of daten[eb.id] || []) eintragNach.set(`${eb.id}|${e.id}`, e);
   zeichnen();
   maerkteZeichnen();
+  camsZeichnen();
   uhr();
 }
 
@@ -536,6 +625,7 @@ function zeichnen() {
   const grenze = Date.now() - stunden * 3600e3;
   const neueste = [];
   for (const eb of EBENEN) {
+    if (eb.raster) { radarZeichnen(eb); continue; }
     const sichtbar = (daten[eb.id] || []).filter(e => e.laufend || e.t >= grenze);
     const zeile = document.querySelector(`.ebene[data-id="${eb.id}"]`);
     zeile.classList.toggle('leer', !daten[eb.id]);
@@ -597,6 +687,156 @@ function maerkteZeichnen() {
     + ' · Quelle: Yahoo Finance · keine Anlageberatung';
 }
 
+// ---- Regenradar (RainViewer, direkt aus dem Browser, nur wenn die Ebene an ist) ----
+let radar = null;                 // neuestes Radarbild { url, zeit }
+let radarProm = null, radarAbruf = 0;
+let radarAuf = null;              // URL des Bildes, das gerade auf der Karte liegt
+
+function radarLaden() {
+  if (!radarProm || Date.now() - radarAbruf >= RADAR_MIN * 60000) {
+    radarAbruf = Date.now();
+    radarProm = fetch('https://api.rainviewer.com/public/weather-maps.json').then(r => r.json()).then(r => {
+      const bild = r.radar.past.at(-1);
+      // 2 = Farbschema "Universal Blue", seit 2026 das einzige im kostenlosen Zugang; 1_1 = geglättet, mit Schnee-Farben
+      return radar = { url: `${r.host}${bild.path}/256/{z}/{x}/{y}/2/1_1.png`, zeit: bild.time * 1000 };
+    }).catch(() => radar); // Fehler: das alte Bild bleibt
+  }
+  return radarProm;
+}
+
+async function radarZeichnen(eb) {
+  if (!bereit) return;
+  const geladen = an[eb.id] ? await radarLaden() : null;
+  const bild = an[eb.id] ? geladen : null; // nach dem Warten neu lesen: die Ebene kann inzwischen aus sein
+  const zeile = document.querySelector(`.ebene[data-id="${eb.id}"]`);
+  zeile.classList.toggle('leer', !!an[eb.id] && !bild);
+  zeile.querySelector('.anzahl').textContent = bild ? new Date(bild.zeit).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+    : an[eb.id] ? 'keine Daten' : '';
+  if ((bild?.url ?? null) === radarAuf) return;
+  if (map.getLayer(eb.id)) { map.removeLayer(eb.id); map.removeSource(eb.id); }
+  radarAuf = bild?.url ?? null;
+  if (!bild) return;
+  map.addSource(eb.id, {
+    type: 'raster', tiles: [bild.url], tileSize: 256, maxzoom: 7, // höher gibt es im kostenlosen Zugang keine Kacheln, MapLibre vergrößert
+    attribution: '<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">Weather data by Rain Viewer</a>',
+  });
+  // Unter die Ortsnamen und unter alle Zeichen der anderen Ebenen
+  map.addLayer({ id: eb.id, type: 'raster', source: eb.id, paint: { 'raster-opacity': 0.6 } },
+    map.getStyle().layers.find(l => l.type === 'symbol')?.id);
+}
+
+// ---- Player für Live-TV und Webcams (YouTube-Einbettung) ----
+const YT = 'https://www.youtube.com';
+const ytLink = ({ videoId, kanalId }) => videoId ? `${YT}/watch?v=${encodeURIComponent(videoId)}` : `${YT}/channel/${encodeURIComponent(kanalId)}/live`;
+const abspielenKnopf = '<button class="abspielen">▶ Abspielen</button>';
+
+// Startet den Stream stumm in huelle (ersetzt deren Inhalt). quelle: { videoId } oder { kanalId } (Livestream des Kanals).
+function playerStarten(huelle, quelle, titel) {
+  const q = `autoplay=1&mute=1&playsinline=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(location.origin)}`;
+  const iframe = Object.assign(document.createElement('iframe'), {
+    src: quelle.videoId ? `${YT}/embed/${encodeURIComponent(quelle.videoId)}?${q}` : `${YT}/embed/live_stream?channel=${encodeURIComponent(quelle.kanalId)}&${q}`,
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', title: titel, quelle,
+  });
+  // Ohne dieses "listening" schickt YouTube keine Fehlermeldungen zurück
+  iframe.addEventListener('load', () => iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), YT));
+  huelle.replaceChildren(iframe);
+}
+
+const playerBefehl = (iframe, func) => iframe?.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), YT);
+
+// Offline oder Einbetten verboten: YouTube meldet einen Fehler, dann steht in der Fläche ein Hinweis statt des schwarzen Players
+window.addEventListener('message', ev => {
+  if (ev.origin !== YT) return;
+  let d;
+  try { d = JSON.parse(ev.data); } catch { return; }
+  if (d.event !== 'onError') return;
+  const f = [...document.querySelectorAll('.player iframe')].find(x => x.contentWindow === ev.source);
+  if (f) f.parentElement.innerHTML = `<p>Stream gerade offline (oder Einbetten nicht erlaubt).<br><a href="${esc(ytLink(f.quelle))}" target="_blank" rel="noopener">Auf YouTube öffnen ↗</a></p>`;
+});
+
+// ---- Live-TV ----
+let sender = null;     // aus config/sender.json
+let tvWahl = null;     // Name des gewählten Senders
+try { tvWahl = localStorage.getItem(SENDER_SPEICHER); } catch {}
+let tvLaeuft = false, tvTon = false;
+const tvAktuell = () => sender?.find(s => s.name === tvWahl) || sender?.[0];
+
+function tvZeichnen() {
+  if (!sender?.length) {
+    $('tv-sender').innerHTML = '';
+    $('tv-player').innerHTML = '<p>Keine Sender. Die Liste steht in config/sender.json.</p>';
+    return;
+  }
+  $('tv-sender').innerHTML = sender.map((s, i) => `<button data-nr="${i}" aria-pressed="${s === tvAktuell()}" title="Sprache: ${esc(s.sprache)}">${esc(s.name)}</button>`).join('');
+  if (!tvLaeuft) $('tv-player').innerHTML = `<button class="abspielen">▶ Live abspielen: ${esc(tvAktuell().name)}</button>`;
+  $('tv-leiste').hidden = !tvLaeuft;
+  $('tv-ton').textContent = tvTon ? 'Ton aus' : 'Ton an';
+}
+
+function tvStarten() {
+  const s = tvAktuell();
+  if (!s.videoId && !s.kanalId) return $('tv-player').innerHTML = '<p>Für diesen Sender fehlt kanalId oder videoId in config/sender.json.</p>';
+  playerStarten($('tv-player'), s, s.name);
+  tvLaeuft = true;
+  tvTon = false;
+  tvZeichnen();
+}
+
+// ---- Webcams ----
+let camsStand = '';          // woran man erkennt, dass sich die Liste geändert hat (laufende Streams sollen das 5-Minuten-Neuladen überstehen)
+let camsRegion = 'Alle';
+let laufendeCams = [];       // Kacheln, die gerade spielen, die älteste zuerst
+let camsListe = [];          // die Webcams, aus denen die Kacheln gebaut sind
+const camKachel = id => $('cams-liste').querySelector(`[data-id="${CSS.escape(id)}"]`);
+
+function camsZeichnen() {
+  if (!daten.webcams && camsListe.length) return; // Neuladen fehlgeschlagen: die Kacheln (und laufende Streams) bleiben
+  const liste = daten.webcams || [];
+  const stand = JSON.stringify(liste.map(c => [c.id, c.titel, c.text, c.region, c.videoId, c.kanalId]));
+  if (stand === camsStand) return;
+  camsStand = stand;
+  camsListe = liste;
+  laufendeCams = [];
+  const regionen = [...new Set(liste.map(c => c.region))].sort((a, b) => (REGIONEN.indexOf(a) + 1 || 99) - (REGIONEN.indexOf(b) + 1 || 99));
+  if (camsRegion !== 'Alle' && !regionen.includes(camsRegion)) camsRegion = 'Alle';
+  $('cams-region').innerHTML = ['Alle', ...regionen].map(r => `<button data-region="${esc(r)}" aria-pressed="${r === camsRegion}">${esc(r)}</button>`).join('');
+  $('cams-liste').innerHTML = liste.map(c => `<article class="cam" data-id="${esc(c.id)}" data-region="${esc(c.region)}" ${camsRegion !== 'Alle' && c.region !== camsRegion ? 'hidden' : ''}>
+      <div class="player">${c.videoId || c.kanalId ? abspielenKnopf : '<p>Noch keine Video-ID eingetragen (config/webcams.json).</p>'}</div>
+      <div class="cam-zeile"><span><b>${esc(c.titel)}</b><small>${esc(c.text)}</small></span><button class="stopp" hidden>Stopp</button></div>
+    </article>`).join('') || `<p class="leer-hinweis">${daten.webcams ? 'Keine Webcams in config/webcams.json.' : 'Keine Daten.'}</p>`;
+}
+
+function camsFiltern(region) {
+  camsRegion = region;
+  for (const k of $('cams-liste').querySelectorAll('.cam')) k.hidden = region !== 'Alle' && k.dataset.region !== region;
+  for (const b of $('cams-region').children) b.setAttribute('aria-pressed', b.dataset.region === region);
+}
+
+function camStarten(kachel) {
+  const c = camsListe.find(x => x.id === kachel.dataset.id);
+  const max = $('cams-liste').classList.contains('einzeln') ? 1 : CAMS_MAX;
+  while (laufendeCams.length >= max) camStoppen(laufendeCams[0]);
+  playerStarten(kachel.querySelector('.player'), c, c.titel);
+  kachel.querySelector('.stopp').hidden = false;
+  laufendeCams.push(kachel);
+}
+
+function camStoppen(kachel) {
+  laufendeCams = laufendeCams.filter(k => k !== kachel);
+  kachel.querySelector('.player').innerHTML = abspielenKnopf;
+  kachel.querySelector('.stopp').hidden = true;
+}
+
+// Klick auf die Kamera in der Karte: Panel aufklappen, Kachel zeigen und stumm starten
+function webcamOeffnen(id) {
+  const kachel = camKachel(id);
+  if (!kachel) return;
+  if ($('cams-inhalt').hidden) document.querySelector('[aria-controls="cams-inhalt"]').click();
+  if (kachel.hidden) camsFiltern('Alle');
+  kachel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!laufendeCams.includes(kachel) && kachel.querySelector('.abspielen')) camStarten(kachel);
+}
+
 function uhr() {
   const jetzt = new Date();
   $('uhr-utc').textContent = jetzt.toISOString().slice(11, 19);
@@ -656,6 +896,44 @@ $('maerkte-reiter').addEventListener('click', e => {
   reiter = knopf.dataset.reiter;
   try { localStorage.setItem(REITER_SPEICHER, reiter); } catch {}
   maerkteZeichnen();
+});
+
+// Live-TV: Senderliste aus config/sender.json, der Player lädt erst nach einem Klick
+$('tv-sender').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  tvWahl = sender[knopf.dataset.nr].name;
+  try { localStorage.setItem(SENDER_SPEICHER, tvWahl); } catch {}
+  if (tvLaeuft) tvStarten(); else tvZeichnen();
+});
+$('tv-player').addEventListener('click', e => { if (e.target.closest('.abspielen')) tvStarten(); });
+$('tv-ton').onclick = () => {
+  tvTon = !tvTon;
+  playerBefehl($('tv-player').querySelector('iframe'), tvTon ? 'unMute' : 'mute');
+  tvZeichnen();
+};
+$('tv-vollbild').onclick = () => $('tv-player').querySelector('iframe')?.requestFullscreen?.();
+$('tv-stopp').onclick = () => { tvLaeuft = false; tvZeichnen(); };
+fetch('config/sender.json').then(r => r.json()).then(l => { sender = Array.isArray(l) ? l : null; }).catch(() => {}).finally(tvZeichnen);
+
+// Webcams: Region filtern, Raster/Einzelansicht, Abspielen/Stopp
+$('cams-region').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (knopf) camsFiltern(knopf.dataset.region);
+});
+$('cams-ansicht').addEventListener('click', e => {
+  const knopf = e.target.closest('button');
+  if (!knopf) return;
+  const einzeln = knopf.dataset.ansicht === 'einzeln';
+  $('cams-liste').classList.toggle('einzeln', einzeln);
+  while (einzeln && laufendeCams.length > 1) camStoppen(laufendeCams[0]);
+  for (const b of knopf.parentElement.children) b.setAttribute('aria-pressed', b === knopf);
+});
+$('cams-liste').addEventListener('click', e => {
+  const kachel = e.target.closest('.cam');
+  if (!kachel) return;
+  if (e.target.closest('.abspielen')) camStarten(kachel);
+  else if (e.target.closest('.stopp')) camStoppen(kachel);
 });
 
 // Klick auf Ereignis oder Meldung in der rechten Spalte: Karte fliegt hin und öffnet das Popup

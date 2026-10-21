@@ -1,0 +1,10 @@
+[
+  { "name": "tagesschau", "kanalId": "UC5NOEUbkLheQcaaRldYW5GA", "sprache": "de" },
+  { "name": "WELT", "kanalId": "UCZMsvbAhhRblVGXmEXW8TSA", "sprache": "de" },
+  { "name": "DW News", "kanalId": "UCknLrEdhRCp1aegoMqRaCZg", "sprache": "en" },
+  { "name": "euronews", "kanalId": "UCSrZ3UV4jOidv8ppoVuvW9Q", "sprache": "en" },
+  { "name": "Al Jazeera English", "kanalId": "UCNye-wNBqNL5ZzHSJj3l8Bg", "sprache": "en" },
+  { "name": "FRANCE 24 English", "kanalId": "UCQfwfsi5VrQ8yKZ-UWmAEFg", "sprache": "en" },
+  { "name": "Sky News", "kanalId": "UCoMdktPbSTixAyNGwb-UYkQ", "sprache": "en" },
+  { "name": "Bloomberg Television", "kanalId": "UCIALMKvObZNtJ6AmdCLP7Lg", "sprache": "en" }
+]

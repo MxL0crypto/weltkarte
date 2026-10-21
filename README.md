@@ -21,6 +21,10 @@ Eine GitHub Action läuft alle 30 Minuten und holt mit `scripts/daten-holen.mjs`
 | eigene Auswertung der Nachrichten | Brennpunkte | nein | alle 30 Min. |
 | [Yahoo Finance](https://finance.yahoo.com) (inoffizielle Schnittstelle) | Panel Märkte (Indizes, Rohstoffe, Krypto, Devisen), Ebene Börsenplätze | nein | alle 30 Min., Kurse verzögert |
 | eigene Liste `config/konfliktzonen.json` | Konfliktzonen | nein | von Hand |
+| [Open-Meteo](https://open-meteo.com/) (nur nicht-kommerzielle Nutzung) | Ebene Temperaturen (aktuelle Temperatur, Wetterlage und Wind in ca. 50 Großstädten) | nein | alle 30 Min. |
+| [RainViewer](https://www.rainviewer.com/) | Ebene Regenradar (Weather data by Rain Viewer) | nein | alle 10 Min., direkt im Browser |
+| [YouTube](https://www.youtube.com) (eingebettete Livestreams) | Panels Live-TV und Live-Webcams, Ebene Webcams | nein | live |
+| eigene Listen `config/sender.json`, `config/webcams.json` | Senderliste, Webcam-Liste | nein | von Hand |
 | [Natural Earth](https://www.naturalearthdata.com/) | Ländergrenzen und Hauptstädte (`config/laender.geojson`, `config/orte.json`) | nein | einmalig |
 | [OpenFreeMap](https://openfreemap.org) / OpenMapTiles / OpenStreetMap | Grundkarte | nein | – |
 
@@ -78,6 +82,40 @@ Soll ein Index auch als Börsenplatz auf der Karte erscheinen, kommen Ort und Ko
 
 Zum Entfernen die ganze Zeile löschen.
 
+## Live-TV und Webcams
+
+Beide Panels laden erst nach einem Klick auf „Abspielen“ etwas von YouTube und starten **stumm**. Beim Live-TV gibt es Knöpfe für Ton und Vollbild, beim Wechsel des Senders merkt sich die Seite die Wahl. Bei den Webcams laufen höchstens 4 gleichzeitig (die älteste stoppt, wenn eine fünfte startet), „Einzeln“ zeigt eine große Kamera nach der anderen. Meldet YouTube, dass ein Stream offline ist oder nicht eingebettet werden darf, steht in der Kachel „Stream gerade offline“ mit einem Link zu YouTube.
+
+Die Ebene **Webcams** (standardmäßig aus) zeigt ein Kamera-Symbol an jedem Ort. Ein Klick öffnet die Webcam im Panel und startet sie.
+
+### Sender hinzufügen oder entfernen
+
+1. Im Repo `config/sender.json` öffnen, Stift (Bearbeiten) klicken.
+2. Eine Zeile kopieren und anpassen, z. B.:
+   `{ "name": "ZDF heute", "kanalId": "UC_HIER_24_ZEICHEN_KANAL_ID", "sprache": "de" },`
+   Die `kanalId` (beginnt mit `UC`): Kanal auf YouTube öffnen, auf den Kanalnamen → „Mehr zu diesem Kanal“ → „Kanal teilen“ → „Kanal-ID kopieren“. Sie funktioniert nur, solange der Kanal gerade live ist.
+3. Klappt der Kanal nicht, die **Video-ID** des Livestreams eintragen: Livestream auf YouTube öffnen, in der Adresse den Teil nach `v=` kopieren (11 Zeichen) und statt `kanalId` als `"videoId": "..."` eintragen.
+4. „Commit changes“ klicken. Nach ein paar Minuten ist der Sender dabei. Zum Entfernen die ganze Zeile löschen.
+
+### Webcams hinzufügen oder entfernen
+
+Die Liste steht in `config/webcams.json`, eine Webcam pro Zeile:
+
+```json
+{ "name": "Times Square", "ort": "New York", "land": "USA", "region": "Amerika", "lat": 40.76, "lon": -73.99, "videoId": "HIER_11_ZEICHEN" },
+```
+
+- `region`: Nahost, Europa, Amerika, Asien, Afrika, Ozeanien oder Weltraum (ein neuer Name ergibt einen neuen Filter). `lat`/`lon` sind der Ort auf der Karte; ohne beide erscheint die Webcam nur im Panel (z. B. die ISS).
+- `videoId`: Livestream auf YouTube öffnen, in der Adresse den Teil nach `v=` kopieren (genau 11 Zeichen, keine ganze Adresse). Statt `videoId` geht auch `kanalId`, solange der Kanal live ist.
+- **Webcams mit leerer `videoId` zeigen „Noch keine Video-ID eingetragen“.** In der mitgelieferten Liste sind alle `videoId` noch leer, die Livestream-Adressen ändern sich zu oft, um sie hier fest zu verdrahten. Zum Befüllen auf YouTube nach dem Namen suchen (z. B. „Times Square live“), einen Stream mit rotem „LIVE“ öffnen und die ID eintragen.
+- Eine falsch eingetragene ID (z. B. die ganze Adresse) meldet das Daten-Skript in `data/status.json` bei „Webcams (eigene Liste)“, die alte Liste bleibt dann stehen.
+
+## Regenradar und Temperaturen
+
+Die Ebene **Regenradar** (standardmäßig aus) legt das aktuelle Radarbild von RainViewer halbdurchsichtig unter alle Zeichen der Karte, in 2D und auf dem Globus. Es wird nur geholt, wenn die Ebene an ist, und alle 10 Minuten erneuert. Radar gibt es nur dort, wo es Wetterradar gibt (vor allem Europa, Nordamerika, Teile von Asien und Ozeanien). Seit 2026 gilt für den kostenlosen Zugang: höchstens Zoomstufe 7 (näher heran wird das Bild vergrößert), ein Farbschema, nur vergangene Bilder. Die Quellenangabe „Weather data by Rain Viewer“ mit Link steht unten rechts an der Karte, solange das Radar an ist.
+
+Die Ebene **Temperaturen** (standardmäßig aus) zeigt „18°“ an ca. 50 Großstädten, gefärbt von blau (kalt) bis rot (heiß). Im Popup stehen Wetterlage und Wind. Die Werte sind Modelldaten von Open-Meteo, keine Messwerte der Stadt. Welche Städte dabei sind, steht in `config/orte.json`: Alle Einträge mit `"wetter": true` zählen. Zum Hinzufügen bei einer Stadt in der Liste `orte` `,"wetter":true` vor die schließende Klammer setzen.
+
 ### webz.io einschalten (optional)
 
 1. Auf [webz.io](https://webz.io) „Free API Key“ wählen, registrieren und den Token (Schlüssel) kopieren.
@@ -97,7 +135,7 @@ python -m http.server 5190
 
 `npm ci` ist nur einmal nötig (installiert `fast-xml-parser` zum Lesen der GDACS- und Nachrichten-Feeds).
 
-Dann im Browser `http://localhost:5190` öffnen. Ein Doppelklick auf `index.html` reicht nicht, weil der Browser die Daten dann nicht laden darf.
+Dann im Browser `http://localhost:5190` öffnen. Ein Doppelklick auf `index.html` reicht nicht, weil der Browser die Daten dann nicht laden darf (und YouTube-Videos lassen sich über `file://` auch nicht einbetten).
 
 ## Datenformat
 
@@ -112,6 +150,8 @@ Jede Ebene ist eine Datei `data/<ebene>.json`:
 - Nur bei Nachrichten dürfen `lat` und `lon` fehlen (kein Ort erkannt). Diese Meldungen stehen nur in der Liste.
 - `data/nachrichten.json` hat zusätzlich `webzAbruf` (optional): Zeitpunkt des letzten webz.io-Abrufs.
 - `farbe` (optional, seit Schritt 4): eigene Farbe statt der Stufen-Farbe, `plus`, `minus` oder `grau` (Ebene Börsenplätze). `stufe` muss trotzdem gesetzt sein.
+- Seit Schritt 5: **Formatänderung** – auch in `data/webcams.json` dürfen `lat` und `lon` fehlen (Kameras im Weltraum, nur im Panel). Optional dort: `region`, `videoId`, `kanalId`. `land` ist in den Daten wie sonst der Ländercode und bei Webcams nicht gesetzt (Land steht im `text`).
+- `data/temperaturen.json` hat das normale Format: `wert` = Temperatur in °C, `text` = Wetterlage und Wind, `stufe` immer `beobachtung` (ohne Bedeutung).
 
 Die Märkte haben ein eigenes Format, `data/maerkte.json`:
 `{ aktualisiert, werte: [{ name, symbol, gruppe, kurs, waehrung, aenderungProzent, verlauf: [...] }] }`
@@ -132,4 +172,4 @@ GitHub pausiert zeitgesteuerte Actions in öffentlichen Repos nach 60 Tagen ohne
 - [x] Schritt 2: Naturereignisse (Waldbrände, Stürme, Vulkane, Überschwemmungen, Katastrophen-Warnungen)
 - [x] Schritt 3: Nachrichten und Krisen (Nachrichten mit Zahlenblasen, Brennpunkte, Konfliktzonen, Panel Live-Nachrichten, webz.io optional)
 - [x] Schritt 4: Wirtschaft (Panel Märkte mit Indizes, Rohstoffen, Krypto, Devisen und Mini-Verläufen, Ebene Börsenplätze)
-- [ ] Schritt 5: TV, Webcams, Wetter
+- [x] Schritt 5: TV, Webcams, Wetter (Panels Live-TV und Live-Webcams, Ebenen Webcams, Regenradar, Temperaturen). **Noch zu tun von Hand:** die Video-IDs der Webcams in `config/webcams.json` eintragen (siehe „Webcams hinzufügen oder entfernen“).
